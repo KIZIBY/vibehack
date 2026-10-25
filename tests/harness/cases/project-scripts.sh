@@ -167,6 +167,26 @@ t "test-unit frontend: npm test в каталоге frontend/" 0 loggrep '^npm t
 t "test-unit frontend: красный npm → exit 1" 1 ut STUB_NPM_RC=1 bash "$UT" frontend
 t_out "test-unit frontend: красная зона названа" 'frontend'
 
+# frontend без скрипта test (скаффолд dev/build/preview) → SKIP, а не красный npm test; битый package.json → fail-closed
+F="$TMP/fe-noscript"; mkproj "$F"; FU="$F/scripts/test-unit.sh"; mkdir -p "$F/frontend"
+printf '{"name":"x","scripts":{"dev":"vite","build":"tsc -b && vite build"}}\n' > "$F/frontend/package.json"
+t "test-unit frontend: package.json без скрипта test → exit 0" 0 ut bash "$FU" frontend
+t_out "test-unit frontend: без скрипта test → SKIP frontend" 'SKIP frontend'
+t "test-unit frontend: без скрипта test → npm не запускался" 0 lognot '^npm '
+t "test-unit all: package.json без скрипта test → exit 0" 0 ut bash "$FU" all
+t_out "test-unit all: без скрипта test → SKIP frontend" 'SKIP frontend'
+t "test-unit all: без скрипта test → npm не запускался" 0 lognot '^npm '
+printf '{"name":"x"}\n' > "$F/frontend/package.json"
+t "test-unit frontend: package.json без раздела scripts → exit 0" 0 ut bash "$FU" frontend
+t_out "test-unit frontend: без раздела scripts → SKIP frontend" 'SKIP frontend'
+t "test-unit frontend: без раздела scripts → npm не запускался" 0 lognot '^npm '
+printf '{"name": "x", "scripts": {' > "$F/frontend/package.json"
+t "test-unit frontend: битый package.json → exit 2 (fail-closed)" 2 ut bash "$FU" frontend
+t_out "test-unit frontend: битый package.json → сообщение, что он не читается" 'package\.json.*(не читается|не удалось (прочитать|разобрать)|невалид)'
+t_out_absent "test-unit frontend: битый package.json не выдан за SKIP" 'SKIP frontend'
+t "test-unit frontend: битый package.json → npm не запускался" 0 lognot '^npm '
+t "test-unit all: битый package.json → красный итог (exit не 0)" 0 sh -c '! env bash "$1" all >/dev/null 2>&1' _ "$FU"
+
 # all: все зоны запускаются; красная зона → красный итог
 t "test-unit all (без аргумента), все зоны с тестами → exit 0" 0 ut bash "$UT"
 t "test-unit all: запущены backend, intake, contracts, hermes, frontend" 0 sh -c \
