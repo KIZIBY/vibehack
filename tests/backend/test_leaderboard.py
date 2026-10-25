@@ -76,12 +76,13 @@ def ev(ref="api/routes.py:1-9", **kw):
     return L().EvidenceItem(kind=kw.pop("kind", "file"), ref=ref, **kw)
 
 
-def scored(cid, score, *, version=1, override=None, **kw):
+def scored(cid, score, *, version=1, entry_version=1, override=None, **kw):
+    """version — версия рубрики оценки (rubric_version); entry_version — версия записи для expected_version."""
     kw.setdefault("evidence", (ev(),))
     kw.setdefault("justification", "обоснование")
     kw.setdefault("confidence", 0.7)
     return L().CriterionScore(criterion_id=cid, status="scored", agent_score=score, rubric_version=version,
-                              override=override, **kw)
+                              override=override, version=entry_version, **kw)
 
 
 def no_data(cid, version=1, **kw):
@@ -488,7 +489,7 @@ def explain(entry, *, cid="c1", flags=(), team="Alpha"):
 
 def test_explanation_for_scored_criterion():
     entry = scored(
-        "c1", 8, justification="Хорошая архитектура", confidence=0.85, run_id="run-7", version=4,
+        "c1", 8, justification="Хорошая архитектура", confidence=0.85, run_id="run-7", entry_version=4,
         evidence=(ev("api/routes.py:40-88", quote="def create()"), ev("deck.pdf#4", kind="slide", available=False)),
     )
     other_flag = flag("plagiarism", criterion_id="c2")
@@ -508,7 +509,7 @@ def test_explanation_for_scored_criterion():
 
 
 def test_explanation_after_override_shows_both_scores():
-    entry = scored("c1", 4, override=override(9, reason="проверили руками"), version=2)
+    entry = scored("c1", 4, override=override(9, reason="проверили руками"), entry_version=2)
     result = explain(entry)
 
     assert result["score"] == 9 and result["agent_score"] == 4
