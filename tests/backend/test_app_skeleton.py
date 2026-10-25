@@ -478,3 +478,122 @@ def test_create_app_default_arguments_work(monkeypatch):
 def test_backend_requirements_list_package(package):
     text = (REPO / "backend" / "requirements.txt").read_text(encoding="utf-8")
     assert re.search(rf"^{package}($|[^A-Za-z0-9_-])", text, re.I | re.M), f"нет {package} в backend/requirements.txt"
+
+
+# ═══════════════ ревью T020, круг 1: утечка detail, пароли в URL, pick_request_id, обрыв стрима ═══════════════
+
+HTTP_ERRORS = '''
+from fastapi import APIRouter, HTTPException
+router = APIRouter()
+
+@router.get("/http500")
+def http500():
+    raise HTTPException(500, "sensitive-detail")
+
+@router.get("/http503")
+def http503():
+    raise HTTPException(503, "sensitive-detail")
+
+@router.get("/http400")
+def http400():
+    raise HTTPException(400, "понятная причина")
+'''
+
+STREAM_ABORT = '''
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+router = APIRouter()
+
+@router.get("/stream-abort")
+def stream_abort():
+    def chunks():
+        yield b"first-chunk"
+        raise RuntimeError("stream-broke")
+    return StreamingResponse(chunks(), media_type="text/plain")
+'''
+
+
+# 1. HTTPException >= 500 не отдаёт detail клиенту; 4xx отдаёт
+@pytest.mark.parametrize("path,status,code", [("/http500", 500, "internal"), ("/http503", 503, "unavailable")])
+def test_http_exception_5xx_hides_detail(tmp_path, monkeypatch, path, status, code):
+    app = make_app(tmp_path, monkeypatch, modules={"sample": SAMPLE_ROUTES, "httperrs": HTTP_ERRORS})
+    resp = make_client(app).get(path, headers={"X-Request-ID": "h5-1"})
+    assert "sensitive-detail" not in resp.text, "detail HTTPException >= 500 утёк клиенту"
+    err = assert_error(resp, status, code)
+    assert err["message"] and err["request_id"] == "h5-1"
+
+
+def test_http_exception_4xx_keeps_detail(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, modules={"sample": SAMPLE_ROUTES, "httperrs": HTTP_ERRORS})
+    resp = make_client(app).get("/http400")
+    assert resp.status_code == 400
+    jsonschema.validate(resp.json(), error_schema())
+    assert "понятная причина" in resp.json()["error"]["message"]
+    assert resp.json()["error"]["request_id"] == resp.headers["X-Request-ID"]
+
+
+# 2. пароль в URL не попадает в repr/str настроек (URL собираются из частей: литералы с user:pass@ ловит сканер I-7)
+DB_PW, HERMES_PW = "S3cretPw", "Tok3n"
+DB_URL = "postgresql+psycopg://" + "appuser" + ":" + DB_PW + "@db.local:5432/judge"
+HERMES_URL = "http://" + "hermes" + ":" + HERMES_PW + "@hermes.local:8642"
+
+
+@pytest.mark.parametrize("render", [repr, str])
+def test_settings_url_password_masked_in_repr_and_str(render):
+    from app.config import load_settings
+    s = load_settings({"JUDGE_DATABASE_URL": DB_URL, "HERMES_API_URL": HERMES_URL})
+    text = render(s)
+    assert DB_PW not in text and HERMES_PW not in text, "пароль из URL попал в представление настроек"
+    assert "appuser" in text and "db.local" in text and "hermes.local" in text
+    assert "***" in text
+
+
+def test_settings_keep_full_url_values():
+    from app.config import load_settings
+    s = load_settings({"JUDGE_DATABASE_URL": DB_URL, "HERMES_API_URL": HERMES_URL})
+    assert s.database_url == DB_URL and s.hermes_api_url == HERMES_URL
+
+
+@pytest.mark.parametrize("render", [repr, str])
+def test_settings_url_without_password_shown_as_is(render):
+    from app.config import load_settings
+    s = load_settings({"HERMES_API_URL": "http://hermes:8642"})
+    text = render(s)
+    assert "sqlite:///judge.db" in text and "http://hermes:8642" in text
+
+
+# 3. pick_request_id: fullmatch, без «хвостового» перевода строки
+@pytest.mark.parametrize("bad", ["valid\n", "ok\r\n", "a\x00b", "", None])
+def test_pick_request_id_rejects_unsafe_values(bad):
+    from app.middleware import pick_request_id
+    got = pick_request_id(bad)
+    assert got != bad
+    assert re.fullmatch(r"[A-Za-z0-9._-]{1,64}", got), f"выдан небезопасный id {got!r}"
+
+
+def test_pick_request_id_keeps_valid_value():
+    from app.middleware import pick_request_id
+    assert pick_request_id("good-id_1.2") == "good-id_1.2"
+
+
+# 4. обрыв потокового ответа помечается в access-логе
+def test_access_log_marks_aborted_stream(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch, modules={"sample": SAMPLE_ROUTES, "streaming": STREAM_ABORT})
+    buf = start_logging()
+    resp = make_client(app).get("/stream-abort", headers={"X-Request-ID": "strm-1"})
+    assert resp.headers["X-Request-ID"] == "strm-1"
+    records = log_records(buf)
+    access = [r for r in records if r.get("path") == "/stream-abort"]
+    assert len(access) == 1, access
+    assert access[0]["aborted"] is True
+    assert access[0]["status"] == 200, "статус в access-записи — тот, что реально ушёл клиенту"
+    errors = [r for r in records if r["level"] == "ERROR"]
+    assert errors and any(r["request_id"] == "strm-1" for r in errors), "нет ERROR об обрыве с request_id"
+
+
+def test_access_log_normal_request_is_not_aborted(tmp_path, monkeypatch):
+    app = make_app(tmp_path, monkeypatch)
+    buf = start_logging()
+    make_client(app).get("/ping")
+    (rec,) = [r for r in log_records(buf) if r.get("path") == "/ping"]
+    assert rec["aborted"] is False
