@@ -134,6 +134,24 @@ def validate_score_item(item: Any, index: int) -> None:
             raise ValueError(f"scores[{index}] ('{cid}'): status='no_data' requires a non-empty no_data_reason")
 
 
+VALID_FLAG_SEVERITY = {"low", "medium", "high", "critical"}
+FLAGS_REQUIRING_SEVERITY = {"claim_mismatch"}
+MAX_CLAIMS = 20
+VALID_SOURCE_REF_KINDS = {"slide", "video", "document", "screenshot", "url"}
+
+
+def validate_source_ref(source_ref: Any, context: str = "") -> None:
+    """Валидирует source_ref — первоисточник утверждения."""
+    if not isinstance(source_ref, dict):
+        raise ValueError(f"{context}: source_ref must be an object")
+    kind = source_ref.get("kind")
+    if not kind or not isinstance(kind, str):
+        raise ValueError(f"{context}: source_ref.kind is required")
+    ref = source_ref.get("ref")
+    if not ref or not isinstance(ref, str) or not ref.strip():
+        raise ValueError(f"{context}: source_ref.ref is required and must be non-empty string")
+
+
 def validate_flag_item(flag: Any) -> None:
     """Валидирует флаг нечестности или сбоя."""
     if not isinstance(flag, dict):
@@ -141,6 +159,17 @@ def validate_flag_item(flag: Any) -> None:
     ftype = flag.get("type")
     if ftype not in VALID_FLAG_TYPES:
         raise ValueError(f"flag type '{ftype}' is invalid, allowed: {sorted(VALID_FLAG_TYPES)}")
+
+    severity = flag.get("severity")
+    if ftype in FLAGS_REQUIRING_SEVERITY:
+        if not severity or severity not in VALID_FLAG_SEVERITY:
+            raise ValueError(
+                f"flag '{ftype}' requires severity (one of {sorted(VALID_FLAG_SEVERITY)})"
+            )
+    elif severity is not None and severity not in VALID_FLAG_SEVERITY:
+        raise ValueError(
+            f"flag severity '{severity}' is invalid, allowed: {sorted(VALID_FLAG_SEVERITY)}"
+        )
 
     conf = flag.get("confidence")
     if conf is None or not isinstance(conf, (int, float)) or not (0.0 <= float(conf) <= 1.0):
@@ -253,7 +282,14 @@ def save_flag(params: dict[str, Any], session_id: str | None = None) -> dict[str
 
 
 def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
-    """Обрабатывает report_claims (роль critic-honesty)."""
+    """Обрабатывает report_claims (роль critic-honesty).
+
+    Валидирует:
+    - source_ref (kind + ref) для каждого утверждения
+    - contradicted вердикт требует непустой evidence
+    - уникальность claim_id
+    - максимум MAX_CLAIMS утверждений
+    """
     run_id = params.get("run_id") or guard.extract_run_id(session_id)
     if not run_id:
         raise ValueError("run_id is required")
@@ -264,16 +300,44 @@ def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[s
     if not isinstance(claims, list):
         raise ValueError("claims must be a list")
 
+    if len(claims) > MAX_CLAIMS:
+        raise ValueError(
+            f"too many claims ({len(claims)}): maximum is {MAX_CLAIMS} per call"
+        )
+
+    seen_ids: set[str] = set()
     for idx, c in enumerate(claims):
         if not isinstance(c, dict):
             raise ValueError(f"claims[{idx}]: must be an object")
-        if not c.get("claim_id") or not c.get("text"):
+        claim_id = c.get("claim_id")
+        if not claim_id or not c.get("text"):
             raise ValueError(f"claims[{idx}]: claim_id and text are required")
+
+        # Уникальность claim_id
+        if claim_id in seen_ids:
+            raise ValueError(f"claims[{idx}]: duplicate claim_id '{claim_id}'")
+        seen_ids.add(claim_id)
+
         if c.get("verdict") not in VALID_CLAIM_VERDICTS:
             raise ValueError(f"claims[{idx}]: verdict must be one of {sorted(VALID_CLAIM_VERDICTS)}")
+
+        # source_ref обязателен — откуда утверждение
+        source_ref = c.get("source_ref")
+        if not source_ref:
+            raise ValueError(f"claims[{idx}]: source_ref is required (where the claim comes from)")
+        validate_source_ref(source_ref, context=f"claims[{idx}]")
+
         evidence = c.get("evidence", [])
         if not isinstance(evidence, list):
             raise ValueError(f"claims[{idx}]: evidence must be a list")
+
+        # contradicted вердикт требует доказательства расхождения
+        verdict = c.get("verdict")
+        if verdict == "contradicted" and len(evidence) == 0:
+            raise ValueError(
+                f"claims[{idx}]: verdict 'contradicted' requires at least one evidence item"
+            )
+
         for ev in evidence:
             validate_evidence(ev, context=f"claims[{idx}]")
 
