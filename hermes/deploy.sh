@@ -10,6 +10,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$HOME/.hermes}"
+export JUDGE_DATA_DIR="${JUDGE_DATA_DIR:-$HOME/.judge_data}"
+mkdir -p "$JUDGE_DATA_DIR"
 cd "$HERE"
 
 docker compose pull

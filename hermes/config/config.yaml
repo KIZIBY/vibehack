@@ -21,6 +21,33 @@ approvals:
     - "shutdown*"
     - "reboot*"
 
+model:
+  provider: openai-codex        # Подписка OpenAI через hermes model
+
+gateway:
+  api_server:
+    max_concurrent_runs: 5      # Лимит параллельных ролей по спайку T001 (R4)
+
+platform_toolsets:
+  api_server:                   # Наборы инструментов для шлюза API
+    enabled: true
+    toolsets:
+      - ai_judge
+      - file_system
+      - web
+
+network:
+  egress:
+    deny:                       # Запрет исходящих запросов в приватные сети (I-1, NFR-011)
+      - "127.0.0.0/8"           # Localhost
+      - "10.0.0.0/8"            # RFC 1918 Class A
+      - "172.16.0.0/12"         # RFC 1918 Class B
+      - "192.168.0.0/16"        # RFC 1918 Class C
+      - "169.254.169.254/32"    # Cloud Instance Metadata Service
+      - "::1/128"               # IPv6 loopback
+      - "fc00::/7"              # IPv6 Unique Local
+      - "fe80::/10"             # IPv6 Link-Local
+
 security:
   redact_secrets: true
 

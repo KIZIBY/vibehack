@@ -11,6 +11,8 @@ services:
       - "127.0.0.1:9119:9119"   # дашборд
     volumes:
       - ${HERMES_DATA_DIR:-~/.hermes}:/opt/data
+      # Общий том материалов с backend (I-1, T014, T069)
+      - ${JUDGE_DATA_DIR}:/opt/data/workspaces
       # Наш код — read-only, по подпапке: в остальное содержимое skills/ и plugins/ пишет сам агент.
       - ./plugins/ai-judge:/opt/data/plugins/ai-judge:ro
       - ./skills/ai-judge:/opt/data/skills/ai-judge:ro
