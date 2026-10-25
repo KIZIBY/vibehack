@@ -20,6 +20,8 @@ trap 'die "failed at line $LINENO"' ERR
 [[ -n "$HOST" ]] || die "нужен DEPLOY_HOST с публичным IP"
 [[ -n "$TLS_EMAIL" ]] || die "нужен TLS_EMAIL для автоматического продления IP-сертификата"
 [[ -f "$ENV_FILE" ]] || die "нет $ENV_FILE; создайте его на сервере (см. docs/guides/OPERATIONS_GUIDE.md)"
+# The env file is private, but release assets must be readable by nginx/www-data.
+umask 022
 
 command -v apt-get >/dev/null || die "поддерживается Debian/Ubuntu с apt-get"
 apt-get update -qq
@@ -45,6 +47,9 @@ python3 -m venv "$BASE/venv"
 "$BASE/venv/bin/python" -m pip install --quiet --upgrade pip
 "$BASE/venv/bin/pip" install --quiet -r "$RELEASE_DIR/backend/requirements.txt"
 (cd "$RELEASE_DIR/frontend" && npm ci --silent && npm run build)
+chmod 0755 "$BASE" "$BASE/releases" "$RELEASE_DIR" "$RELEASE_DIR/frontend" "$RELEASE_DIR/frontend/dist"
+find "$RELEASE_DIR/frontend/dist" -type d -exec chmod 0755 {} +
+find "$RELEASE_DIR/frontend/dist" -type f -exec chmod 0644 {} +
 
 install -d -m 0750 "$STATE/backups"
 if [[ -f "$STATE/judge.db" ]]; then
