@@ -32,9 +32,13 @@ def test_update_project_accepts_date_objects_from_the_database(app, client, monk
     pid = create(client, starts_on="2026-11-01", ends_on="2026-11-05")["id"]
     original = service.repo.get
 
+    reads = []
+
     def get_with_dates(session, project_id):
         row = original(session, project_id)
-        row["starts_on"], row["ends_on"] = date(2026, 11, 1), date(2026, 11, 5)
+        reads.append(project_id)
+        if len(reads) % 2:    # нечётное чтение — перед проверкой (как из Postgres); чётное — ответ после записи
+            row["starts_on"], row["ends_on"] = date(2026, 11, 1), date(2026, 11, 5)
         return row
 
     monkeypatch.setattr(service.repo, "get", get_with_dates)
@@ -43,6 +47,7 @@ def test_update_project_accepts_date_objects_from_the_database(app, client, monk
             service.update_project(session, pid, 1, {"ends_on": "2026-10-01"})
         with pytest.raises(service.InvalidProject):
             service.update_project(session, pid, 1, {"starts_on": "2026-12-01"})
+        reads.clear()
         view = service.update_project(session, pid, 1, {"ends_on": "2026-11-09"})
     assert (view["starts_on"], view["ends_on"]) == ("2026-11-01", "2026-11-09")
 
