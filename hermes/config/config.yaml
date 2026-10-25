@@ -1,0 +1,22 @@
+# Наша часть ~/.hermes/config.yaml. scripts/apply_overlay.py сливает её с конфигом на сервере:
+# словари — рекурсивно, списки — объединением, скаляры — наше значение побеждает. Ключи, которых
+# здесь нет (например model:, его пишет мастер `hermes setup` / `hermes model`), остаются как есть.
+# Секретов тут нет и быть не должно — они в ~/.hermes/.env на сервере.
+
+plugins:
+  enabled:
+    - ai-judge
+
+approvals:
+  mode: manual                  # опасные команды — только с подтверждением
+  timeout: 300                  # без ответа — отказ (fail-closed)
+  deny:                         # не выполняется никогда, даже в /yolo
+    - "git push --force*"
+    - "*curl*|*sh*"
+    - "dd if=* of=/dev/*"
+
+security:
+  redact_secrets: true
+
+checkpoints:
+  enabled: true                 # снапшот перед разрушающими операциями

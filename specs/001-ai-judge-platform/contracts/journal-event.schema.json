@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibehack.local/contracts/journal-event.schema.json",
+  "title": "JournalEvent",
+  "description": "Одна строка журнала (FR-029, FR-030). Агентский слой дописывает runs/<run_id>/journal.jsonl, backend забирает строки в таблицу journal_event и добавляет свои события. Только дописывается (устав I-3). Токены и стоимость — null, если провайдер данных не дал (никаких оценок на глаз).",
+  "type": "object",
+  "required": ["schema_version", "ts", "project_id", "run_id", "seq", "event", "source"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1" },
+    "ts": { "type": "string", "format": "date-time" },
+    "project_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "submission_id": { "type": ["string", "null"] },
+    "role": {
+      "enum": ["rubric", "sorter", "code", "business", "design", "critic-uniqueness", "critic-honesty", "backend", null]
+    },
+    "session_id": { "type": ["string", "null"], "description": "Формат: <run_id>:<role>." },
+    "seq": { "type": "integer", "minimum": 0, "description": "Порядковый номер внутри run_id; по нему backend отбрасывает дубли при повторном чтении файла." },
+    "event": {
+      "enum": [
+        "run_started", "tool_call", "model_call", "score_reported", "flag_reported",
+        "claims_reported", "report_rejected", "run_completed", "run_failed", "run_retried",
+        "rubric_changed", "override", "purge"
+      ]
+    },
+    "tool": { "type": ["string", "null"] },
+    "args_summary": { "type": ["string", "null"], "maxLength": 2000, "description": "Сжатые аргументы, секреты уже замаскированы." },
+    "result_summary": { "type": ["string", "null"], "maxLength": 2000 },
+    "refs": {
+      "type": "array",
+      "description": "Что именно прочитано или найдено: пути, URL, номера слайдов.",
+      "items": { "type": "string" }
+    },
+    "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
+    "model": { "type": ["string", "null"] },
+    "provider": { "type": ["string", "null"] },
+    "tokens_in": { "type": ["integer", "null"], "minimum": 0 },
+    "tokens_out": { "type": ["integer", "null"], "minimum": 0 },
+    "cost_usd": { "type": ["number", "null"], "minimum": 0 },
+    "actor": { "type": ["string", "null"], "description": "Для override, rubric_changed и purge: кто сделал (в первой версии — demo)." },
+    "source": { "enum": ["hermes.post_tool_call", "hermes.post_llm_call", "hermes.sse", "backend"] }
+  }
+}

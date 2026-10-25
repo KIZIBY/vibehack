@@ -1,0 +1,895 @@
+openapi: 3.1.0
+info:
+  title: AI-судья — REST API
+  version: "1.0.0"
+  description: |
+    Контракт между backend (зона A) и frontend (зона D). Заморожен после T011 (устав I-6).
+    Вход — один общий демо-аккаунт: сессионная cookie `session` (httpOnly). Все маршруты, кроме
+    `POST /api/v1/auth/login` и `GET /health`, без сессии отвечают 401.
+    Ошибки — всегда `Error`. Списки, растущие со временем (сообщения, журнал), — keyset:
+    `?after=<cursor>&limit=<n>`, ответ несёт `next_cursor` (null — конец).
+servers:
+  - url: http://127.0.0.1:8000
+tags:
+  - { name: auth }
+  - { name: projects }
+  - { name: rubric }
+  - { name: submissions }
+  - { name: runs }
+  - { name: results }
+paths:
+  /health:
+    get:
+      summary: Проверка живости; без авторизации
+      operationId: health
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, agents]
+                properties:
+                  status: { const: ok }
+                  agents: { enum: [up, down, unknown], description: "Состояние шлюза агентов; down не делает статус ошибкой (устав I-8)." }
+                  version: { type: string }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Вход общим демо-аккаунтом
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        "204": { description: "Сессия создана, cookie `session` выставлена" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      responses:
+        "204": { description: Сессия завершена }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      responses:
+        "200":
+          description: Текущая сессия
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [username]
+                properties:
+                  username: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      parameters:
+        - { name: include_archived, in: query, schema: { type: boolean, default: false } }
+      responses:
+        "200":
+          description: Проекты для сайдбара, новые сверху
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Project" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [projects]
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectCreate" }
+      responses:
+        "201":
+          description: Проект создан
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /api/v1/projects/{project_id}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [projects]
+      operationId: getProject
+      responses:
+        "200":
+          description: Проект
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      description: Переименование, смена дат, включённых агентов, обязательных материалов, архивация. Конкурентная правка — через `expected_version`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProjectUpdate" }
+      responses:
+        "200":
+          description: Обновлённый проект
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "409": { $ref: "#/components/responses/VersionConflict" }
+  /api/v1/projects/{project_id}/messages:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [projects]
+      operationId: listMessages
+      summary: Лента чата проекта
+      parameters:
+        - { $ref: "#/components/parameters/After" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Сообщения от старых к новым
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Message" } }
+                  next_cursor: { type: [string, "null"] }
+    post:
+      tags: [projects]
+      operationId: postMessage
+      summary: Текст организатора в чат; считается вводным, если проект ещё в стадии настройки
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, minLength: 1, maxLength: 20000 }
+      responses:
+        "201":
+          description: Сообщение сохранено
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+  /api/v1/projects/{project_id}/briefs:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [rubric]
+      operationId: listBriefs
+      responses:
+        "200":
+          description: Вводные материалы проекта
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Brief" } }
+    post:
+      tags: [rubric]
+      operationId: uploadBriefs
+      summary: Загрузка вводных (положение, критерии, требования) — файлы и/или ссылки
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files: { type: array, items: { type: string, format: binary } }
+                links: { type: string, description: "JSON-массив URL" }
+      responses:
+        "201":
+          description: Принято; извлечение идёт в фоне, итог — сообщение в чате
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Brief" } }
+        "413": { $ref: "#/components/responses/TooLarge" }
+  /api/v1/projects/{project_id}/rubric:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [rubric]
+      operationId: getRubric
+      summary: Последняя версия рубрики и список версий
+      responses:
+        "200":
+          description: Рубрика; `current` — null, пока не извлечена
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RubricState" }
+    put:
+      tags: [rubric]
+      operationId: saveRubric
+      summary: Сохранить правки как новую версию-черновик
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [criteria, expected_version]
+              properties:
+                criteria: { type: array, items: { $ref: "#/components/schemas/CriterionInput" } }
+                expected_version: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Новая версия
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rubric" }
+        "409": { $ref: "#/components/responses/VersionConflict" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /api/v1/projects/{project_id}/rubric/draft:
+    post:
+      tags: [rubric]
+      operationId: requestRubricDraft
+      summary: Попросить агента собрать рубрику из вводных
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      responses:
+        "202":
+          description: Запущено; готовый черновик приходит событием `rubric.drafted` и сообщением в чате
+        "409":
+          description: Нет вводных или черновик уже строится
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/projects/{project_id}/rubric/confirm:
+    post:
+      tags: [rubric]
+      operationId: confirmRubric
+      summary: Подтвердить рубрику; без этого оценка не запускается (FR-005)
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version]
+              properties:
+                version: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Рубрика подтверждена
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Rubric" }
+        "409": { $ref: "#/components/responses/VersionConflict" }
+  /api/v1/projects/{project_id}/ux-metrics:
+    get:
+      tags: [rubric]
+      operationId: getUxMetrics
+      summary: Метрики дизайнера, зафиксированные на проект (FR-017)
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      responses:
+        "200":
+          description: Метрики; `metrics` пуст, пока не придуманы
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [metrics]
+                properties:
+                  metrics:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, how_to_measure, good_looks_like]
+                      properties:
+                        name: { type: string }
+                        how_to_measure: { type: string }
+                        good_looks_like: { type: string }
+  /api/v1/projects/{project_id}/submissions:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [submissions]
+      operationId: listSubmissions
+      responses:
+        "200":
+          description: Работы с описью и состоянием оценки
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SubmissionSummary" } }
+    post:
+      tags: [submissions]
+      operationId: createSubmission
+      summary: Одна работа — файлы и/или ссылки
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [team_name]
+              properties:
+                team_name: { type: string, minLength: 1 }
+                files: { type: array, items: { type: string, format: binary } }
+                links: { type: string, description: "JSON-массив URL: репозиторий, хост, презентация, скринкаст" }
+      responses:
+        "201":
+          description: Принято; опись строится в фоне
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmissionSummary" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+  /api/v1/projects/{project_id}/submissions:batch:
+    post:
+      tags: [submissions]
+      operationId: createSubmissionsBatch
+      summary: Пачка работ — таблица «команда — ссылки» и/или ZIP с папкой на команду
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                table: { type: string, format: binary, description: "CSV или XLSX: team_name, repo_url, host_url, presentation_url, screencast_url" }
+                archive: { type: string, format: binary, description: "ZIP: <команда>/… " }
+      responses:
+        "201":
+          description: Работы созданы
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, rejected]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/SubmissionSummary" } }
+                  rejected:
+                    type: array
+                    items:
+                      type: object
+                      required: [row, reason]
+                      properties:
+                        row: { type: string }
+                        reason: { type: string }
+        "413": { $ref: "#/components/responses/TooLarge" }
+  /api/v1/submissions/{submission_id}:
+    parameters:
+      - { $ref: "#/components/parameters/SubmissionId" }
+    get:
+      tags: [submissions]
+      operationId: getSubmission
+      summary: Содержимое модального окна команды — опись, критерии, флаги, стоимость
+      responses:
+        "200":
+          description: Работа целиком
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmissionDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/submissions/{submission_id}/criteria/{criterion_id}:
+    parameters:
+      - { $ref: "#/components/parameters/SubmissionId" }
+      - { $ref: "#/components/parameters/CriterionId" }
+    get:
+      tags: [results]
+      operationId: getExplanation
+      summary: Содержимое модального окна балла
+      responses:
+        "200":
+          description: Пояснение оценки
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Explanation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/submissions/{submission_id}/criteria/{criterion_id}/override:
+    put:
+      tags: [results]
+      operationId: overrideScore
+      summary: Ручная правка балла с причиной (FR-027)
+      parameters:
+        - { $ref: "#/components/parameters/SubmissionId" }
+        - { $ref: "#/components/parameters/CriterionId" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [score, reason, expected_version]
+              properties:
+                score: { type: number, minimum: 0 }
+                reason: { type: string, minLength: 3, maxLength: 1000 }
+                expected_version: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Обновлённое пояснение
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Explanation" }
+        "409": { $ref: "#/components/responses/VersionConflict" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /api/v1/projects/{project_id}/runs:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [runs]
+      operationId: listRuns
+      responses:
+        "200":
+          description: Прогоны проекта, новые сверху
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Run" } }
+    post:
+      tags: [runs]
+      operationId: startRun
+      summary: Запустить оценку; без подтверждённой рубрики — 409
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                submission_ids: { type: array, items: { type: string }, description: "Пусто — все работы проекта" }
+                roles: { type: array, items: { $ref: "#/components/schemas/Role" }, description: "Пусто — все роли, включённые в проекте" }
+                criterion_ids: { type: array, items: { type: string }, description: "Для частичной переоценки (FR-024)" }
+      responses:
+        "202":
+          description: Прогон принят
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "409":
+          description: Рубрика не подтверждена или такой прогон уже идёт
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/v1/runs/{run_id}:
+    get:
+      tags: [runs]
+      operationId: getRun
+      parameters:
+        - { name: run_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Прогон с прогрессом «работа × роль»
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/runs/{run_id}/journal:
+    get:
+      tags: [runs]
+      operationId: getJournal
+      summary: Журнал прогона (FR-029), только чтение
+      parameters:
+        - { name: run_id, in: path, required: true, schema: { type: string } }
+        - { name: submission_id, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { $ref: "#/components/schemas/Role" } }
+        - { $ref: "#/components/parameters/After" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: События от старых к новым; объект события — `journal-event.schema.json`
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items: { type: array, items: { $ref: "journal-event.schema.json" } }
+                  next_cursor: { type: [string, "null"] }
+  /api/v1/projects/{project_id}/leaderboard:
+    get:
+      tags: [results]
+      operationId: getLeaderboard
+      summary: Таблица оценок — строка на команду, столбец на критерий (FR-025)
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+        - { name: sort, in: query, schema: { type: string, default: total }, description: "`total` или criterion_id" }
+        - { name: order, in: query, schema: { enum: [asc, desc], default: desc } }
+        - { name: flag, in: query, schema: { $ref: "#/components/schemas/FlagType" }, description: "Оставить только работы с таким флагом" }
+      responses:
+        "200":
+          description: Таблица
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Leaderboard" }
+  /api/v1/projects/{project_id}/export.csv:
+    get:
+      tags: [results]
+      operationId: exportCsv
+      summary: Выгрузка таблицы оценок (FR-028)
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      responses:
+        "200":
+          description: CSV в UTF-8 с BOM
+          content:
+            text/csv:
+              schema: { type: string }
+  /api/v1/projects/{project_id}/events:
+    get:
+      tags: [runs]
+      operationId: projectEvents
+      summary: SSE-поток событий проекта (прогресс оценки, готовность описи и рубрики)
+      description: |
+        `Content-Type: text/event-stream`. Каждое событие — `event: <тип>` и `data: <JSON>`.
+        Типы и тела: `submission.inventory_ready` {submission_id, completeness}, `rubric.drafted` {version},
+        `run.progress` {run_id, submission_id, role, state, attempt}, `run.completed` {run_id, status},
+        `score.changed` {submission_id, criterion_id}, `message.created` {message_id}.
+        `state` — queued | running | done | failed | no_data. Клиент после обрыва переподключается
+        и перечитывает состояние через `GET …/runs/{id}` (события не гарантируют доставку).
+        Заголовок `Last-Event-ID` поддерживается: сервер повторяет события с большим id за последние 5 минут.
+      parameters:
+        - { $ref: "#/components/parameters/ProjectId" }
+      responses:
+        "200":
+          description: Поток событий
+          content:
+            text/event-stream:
+              schema: { type: string }
+components:
+  parameters:
+    ProjectId: { name: project_id, in: path, required: true, schema: { type: string } }
+    SubmissionId: { name: submission_id, in: path, required: true, schema: { type: string } }
+    CriterionId: { name: criterion_id, in: path, required: true, schema: { type: string } }
+    After: { name: after, in: query, schema: { type: string }, description: "Непрозрачный курсор из `next_cursor`" }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+  responses:
+    Unauthorized:
+      description: Нет сессии или неверные данные входа
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Не найдено
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Invalid:
+      description: Неверные данные
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    VersionConflict:
+      description: Данные изменились, `expected_version` устарел (устав I-15)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    TooLarge:
+      description: Файл или архив превышает лимит (NFR-011)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    TooManyRequests:
+      description: Слишком много попыток входа
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code: { type: string, examples: [unauthorized, not_found, invalid, version_conflict, too_large, rate_limited, rubric_not_confirmed, internal] }
+            message: { type: string }
+            request_id: { type: string }
+            details: { type: object, additionalProperties: true }
+    Role:
+      enum: [rubric, sorter, code, business, design, critic-uniqueness, critic-honesty]
+    ScoringRole:
+      enum: [code, business, design, critic-uniqueness, critic-honesty, human]
+    FlagType:
+      enum: [plagiarism, pre_start_project, claim_mismatch, prompt_injection, incomplete_materials, agent_failure, secret_exposed]
+    ProjectType:
+      enum: [product_hackathon, ml_hackathon, homework, other]
+    MaterialType:
+      enum: [repository, host, presentation, screencast, archive, code_file, document, image, metrics_row, other]
+    ProjectCreate:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        type: { $ref: "#/components/schemas/ProjectType" }
+        starts_on: { type: [string, "null"], format: date }
+        ends_on: { type: [string, "null"], format: date }
+    ProjectUpdate:
+      type: object
+      required: [expected_version]
+      properties:
+        name: { type: string }
+        starts_on: { type: [string, "null"], format: date }
+        ends_on: { type: [string, "null"], format: date }
+        agents: { type: array, items: { $ref: "#/components/schemas/ScoringRole" } }
+        required_materials: { type: array, items: { $ref: "#/components/schemas/MaterialType" } }
+        archived: { type: boolean }
+        expected_version: { type: integer, minimum: 0 }
+    Project:
+      type: object
+      required: [id, name, type, status, agents, required_materials, version, created_at, updated_at]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/ProjectType" }
+        status: { enum: [setup, intake, evaluating, results, archived] }
+        starts_on: { type: [string, "null"], format: date }
+        ends_on: { type: [string, "null"], format: date }
+        agents: { type: array, items: { $ref: "#/components/schemas/ScoringRole" } }
+        required_materials: { type: array, items: { $ref: "#/components/schemas/MaterialType" } }
+        rubric_confirmed_version: { type: [integer, "null"] }
+        retention_days: { type: integer, description: "Срок хранения материалов, по умолчанию 7 (FR-031)" }
+        purge_at: { type: [string, "null"], format: date-time }
+        cost_usd: { type: [number, "null"], description: "Сумма по проекту; null, если провайдер не дал данных" }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Message:
+      type: object
+      required: [id, author, kind, text, created_at]
+      properties:
+        id: { type: string }
+        author: { enum: [organizer, agent, system] }
+        kind: { enum: [text, brief_extracted, rubric_drafted, inventory_ready, run_progress, run_completed, warning] }
+        text: { type: string }
+        attachments:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: { type: string }
+              material_id: { type: string }
+        created_at: { type: string, format: date-time }
+    Brief:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        source: { enum: [upload, url, chat] }
+        status: { enum: [processing, extracted, failed, deleted] }
+        reason: { type: string }
+    CriterionInput:
+      type: object
+      required: [name, weight, max_score, agent]
+      properties:
+        id: { type: string, description: "Есть у существующего критерия; у нового нет" }
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        weight: { type: number, exclusiveMinimum: 0 }
+        max_score: { type: number, exclusiveMinimum: 0 }
+        agent: { $ref: "#/components/schemas/ScoringRole" }
+        anchors:
+          type: array
+          items:
+            type: object
+            required: [score, meaning]
+            properties:
+              score: { type: number }
+              meaning: { type: string }
+    Criterion:
+      allOf:
+        - { $ref: "#/components/schemas/CriterionInput" }
+        - type: object
+          required: [id]
+          properties:
+            source_ref: { type: [string, "null"], description: "Откуда взят критерий (материал вводных)" }
+    Rubric:
+      type: object
+      required: [version, status, criteria, created_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        status: { enum: [draft, confirmed, superseded] }
+        weights_were_missing: { type: boolean }
+        criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
+        confirmed_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    RubricState:
+      type: object
+      required: [current, versions]
+      properties:
+        current: { oneOf: [{ $ref: "#/components/schemas/Rubric" }, { type: "null" }] }
+        versions:
+          type: array
+          items:
+            type: object
+            required: [version, status, created_at]
+            properties:
+              version: { type: integer }
+              status: { enum: [draft, confirmed, superseded] }
+              created_at: { type: string, format: date-time }
+    MaterialStatus:
+      type: object
+      required: [material_id, type, status]
+      properties:
+        material_id: { type: string }
+        type: { $ref: "#/components/schemas/MaterialType" }
+        name: { type: string }
+        status: { enum: [available, partial, unavailable, deleted] }
+        reason: { type: string }
+    SubmissionSummary:
+      type: object
+      required: [id, team_name, intake_status, evaluation_status, flags]
+      properties:
+        id: { type: string }
+        team_name: { type: string }
+        intake_status: { enum: [pending, running, ready, failed] }
+        completeness: { enum: [complete, incomplete, unknown] }
+        missing: { type: array, items: { $ref: "#/components/schemas/MaterialType" } }
+        evaluation_status: { enum: [not_started, running, done, partial, failed] }
+        flags: { type: array, items: { $ref: "#/components/schemas/FlagCount" } }
+    FlagCount:
+      type: object
+      required: [type, count]
+      properties:
+        type: { $ref: "#/components/schemas/FlagType" }
+        count: { type: integer }
+    SubmissionDetail:
+      type: object
+      required: [id, team_name, materials, criteria, flags]
+      properties:
+        id: { type: string }
+        team_name: { type: string }
+        materials: { type: array, items: { $ref: "#/components/schemas/MaterialStatus" } }
+        total: { type: [number, "null"], description: "0–100, считает compute_score" }
+        complete: { type: boolean }
+        criteria:
+          type: array
+          items:
+            type: object
+            required: [criterion_id, name, status]
+            properties:
+              criterion_id: { type: string }
+              name: { type: string }
+              status: { enum: [scored, no_data, human_pending] }
+              score: { type: [number, "null"] }
+              max_score: { type: number }
+              overridden: { type: boolean }
+        flags: { type: array, items: { $ref: "#/components/schemas/Flag" } }
+        cost_usd: { type: [number, "null"] }
+        latest_run_id: { type: [string, "null"] }
+    Evidence:
+      type: object
+      required: [kind, ref]
+      properties:
+        kind: { enum: [file, slide, video, screenshot, url, claim, commit, search] }
+        ref: { type: string }
+        quote: { type: string }
+        available: { type: boolean, description: "false, если материал удалён по сроку хранения; ссылка остаётся текстом" }
+    Flag:
+      type: object
+      required: [type, confidence, note, evidence]
+      properties:
+        type: { $ref: "#/components/schemas/FlagType" }
+        criterion_id: { type: string }
+        confidence: { type: number }
+        note: { type: string }
+        evidence: { type: array, items: { $ref: "#/components/schemas/Evidence" } }
+        related_submission_id: { type: string }
+        related_url: { type: string }
+    Explanation:
+      type: object
+      required: [criterion_id, criterion_name, status, version, evidence]
+      properties:
+        criterion_id: { type: string }
+        criterion_name: { type: string }
+        team_name: { type: string }
+        status: { enum: [scored, no_data, human_pending] }
+        score: { type: [number, "null"] }
+        max_score: { type: number }
+        agent_score: { type: [number, "null"], description: "Исходный балл агента; отличается от `score` после ручной правки" }
+        agent: { $ref: "#/components/schemas/ScoringRole" }
+        justification: { type: string }
+        no_data_reason: { type: string }
+        confidence: { type: number }
+        evidence: { type: array, items: { $ref: "#/components/schemas/Evidence" } }
+        flags: { type: array, items: { $ref: "#/components/schemas/Flag" } }
+        override:
+          type: [object, "null"]
+          properties:
+            score: { type: number }
+            reason: { type: string }
+            at: { type: string, format: date-time }
+        run_id: { type: string }
+        version: { type: integer, description: "Для `expected_version` при правке" }
+    Run:
+      type: object
+      required: [id, project_id, status, rubric_version, tasks, created_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        status: { enum: [queued, running, completed, partial, failed] }
+        rubric_version: { type: integer }
+        tasks:
+          type: array
+          items:
+            type: object
+            required: [submission_id, role, state]
+            properties:
+              submission_id: { type: [string, "null"] }
+              role: { $ref: "#/components/schemas/Role" }
+              state: { enum: [queued, running, done, failed, no_data] }
+              attempt: { type: integer }
+              reason: { type: string }
+        tokens_in: { type: [integer, "null"] }
+        tokens_out: { type: [integer, "null"] }
+        cost_usd: { type: [number, "null"] }
+        created_at: { type: string, format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+    Leaderboard:
+      type: object
+      required: [project_id, rubric_version, generated_at, criteria, rows]
+      properties:
+        project_id: { type: string }
+        rubric_version: { type: [integer, "null"] }
+        generated_at: { type: string, format: date-time }
+        stale_criteria: { type: array, items: { type: string }, description: "Оценки старой версии рубрики (FR-007)" }
+        criteria:
+          type: array
+          items:
+            type: object
+            required: [id, name, weight, max_score, agent]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              weight: { type: number }
+              max_score: { type: number }
+              agent: { $ref: "#/components/schemas/ScoringRole" }
+        rows:
+          type: array
+          items:
+            type: object
+            required: [submission_id, team_name, rank, total, complete, cells, flags]
+            properties:
+              submission_id: { type: string }
+              team_name: { type: string }
+              rank: { type: [integer, "null"] }
+              total: { type: [number, "null"] }
+              complete: { type: boolean }
+              cells:
+                type: object
+                description: "Ключ — criterion_id"
+                additionalProperties:
+                  type: object
+                  required: [status]
+                  properties:
+                    status: { enum: [scored, no_data, human_pending, not_evaluated] }
+                    score: { type: [number, "null"] }
+                    max_score: { type: number }
+                    overridden: { type: boolean }
+                    stale: { type: boolean }
+              flags: { type: array, items: { $ref: "#/components/schemas/FlagCount" } }
+        cost_usd: { type: [number, "null"] }
