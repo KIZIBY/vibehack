@@ -8,6 +8,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .logging import request_id_var
 from .repositories.base import VersionConflict
+from .services.netguard import UnsafeUrl
+from .services.rubric import RubricNotConfirmed
+from .services.storage import PayloadTooLarge, UnsafePath
 
 HTTP_CODES = {
     400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 405: "method_not_allowed",
@@ -44,6 +47,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 async def version_conflict_handler(request: Request, exc: VersionConflict) -> JSONResponse:
     return error_response(409, "version_conflict", "Данные изменились, обновите страницу и повторите")
+
+
+async def payload_too_large_handler(request: Request, exc: PayloadTooLarge) -> JSONResponse:
+    return error_response(413, "too_large", "Файл превышает допустимый размер")
+
+
+async def unsafe_path_handler(request: Request, exc: UnsafePath) -> JSONResponse:
+    return error_response(400, "bad_request", "Недопустимый путь или имя файла")
+
+
+async def file_exists_handler(request: Request, exc: FileExistsError) -> JSONResponse:
+    return error_response(409, "conflict", "Материал с таким идентификатором уже сохранён")
+
+
+async def rubric_not_confirmed_handler(request: Request, exc: RubricNotConfirmed) -> JSONResponse:
+    return error_response(409, "rubric_not_confirmed", "Сначала подтвердите рубрику")
+
+
+async def unsafe_url_handler(request: Request, exc: UnsafeUrl) -> JSONResponse:
+    return error_response(422, "invalid", "Ссылка недопустима: разрешены только публичные http и https адреса")
 
 
 def internal_error_response() -> JSONResponse:

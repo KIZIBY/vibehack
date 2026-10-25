@@ -4,6 +4,8 @@ import logging
 
 from fastapi import APIRouter, Request
 
+from .state import get_gateway
+
 router = APIRouter()
 log = logging.getLogger(__name__)
 
@@ -25,8 +27,12 @@ async def agents_state(probe, timeout: float) -> str:
 @router.get("/health")
 async def health(request: Request):
     state = request.app.state
+    probe = state.agent_probe
+    if probe is None:
+        gateway = get_gateway(request.app)
+        probe = gateway.probe if gateway is not None else None
     return {
         "status": "ok",
-        "agents": await agents_state(state.agent_probe, state.agent_probe_timeout),
+        "agents": await agents_state(probe, state.agent_probe_timeout),
         "version": state.settings.version,
     }
