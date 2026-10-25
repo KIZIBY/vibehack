@@ -157,6 +157,49 @@ t "test-unit all: запущены backend, intake, hermes, frontend" 0 sh -c \
 t "test-unit all: красная зона → exit 1" 1 ut STUB_RC=1 bash "$UT" all
 t_out "test-unit all: красная зона названа" 'backend|intake|hermes'
 
+# ── 3a. единое соглашение об именах: тестом считается только test_*.py (pytest и unittest discover) ──
+N="$TMP/naming"; mkproj "$N"; NU="$N/scripts/test-unit.sh"
+mktest "$N" tests/backend/x_test.py
+t "test-unit backend: только x_test.py (нет test_*.py) → exit 0" 0 ut bash "$NU" backend
+t_out "test-unit backend: только x_test.py → SKIP backend: тестов нет" 'SKIP backend: тестов нет'
+t "test-unit backend: только x_test.py → интерпретатор не вызывался" 0 lognot '.'
+mktest "$N" hermes/tests/x_test.py
+t "test-unit hermes: только x_test.py (нет test_*.py) → exit 0" 0 ut bash "$NU" hermes
+t_out "test-unit hermes: только x_test.py → SKIP hermes: тестов нет" 'SKIP hermes: тестов нет'
+t "test-unit hermes: только x_test.py → unittest не вызывался" 0 lognot '.'
+mktest "$N" tests/backend/test_ok.py
+mktest "$N" hermes/tests/test_ok.py
+t "test-unit backend: test_ok.py рядом с x_test.py → exit 0" 0 ut bash "$NU" backend
+t "test-unit backend: test_ok.py рядом с x_test.py → pytest запущен" 0 loggrep '^venv .*-m pytest.*tests/backend'
+t "test-unit hermes: test_ok.py рядом с x_test.py → exit 0" 0 ut bash "$NU" hermes
+t "test-unit hermes: test_ok.py рядом с x_test.py → unittest запущен" 0 loggrep '-m unittest discover -s hermes/tests'
+
+# ── 3b. ошибка чтения каталога тестов ≠ «тестов нет» (fail-closed) ──
+trap 'chmod -R u+rwx "$TMP" 2>/dev/null; rm -rf "$TMP"' EXIT
+Q="$TMP/perm"; mkproj "$Q"
+mktest "$Q" tests/backend/test_a.py
+mktest "$Q" tests/integration/test_a.py
+unreadable() { # <каталог> <команда…> — запуск при chmod 000, права возвращаются всегда
+  local d="$1" rc=0; shift
+  chmod 000 "$d"; ut "$@" || rc=$?; chmod 755 "$d"
+  return "$rc"
+}
+if [ "$(id -u)" -eq 0 ]; then
+  for what in "backend: exit 2" "backend: tests/backend в выводе" "backend: не удалось прочитать" "backend: нет SKIP" \
+              "integration: exit 2" "integration: tests/integration в выводе" "integration: не удалось прочитать" "integration: нет SKIP"; do
+    ok "пропуск: запуск от root (chmod 000 не ограничивает чтение) — $what"
+  done
+else
+  t "test-unit backend: tests/backend нечитаем → exit 2" 2 unreadable "$Q/tests/backend" bash "$Q/scripts/test-unit.sh" backend
+  t_out "test-unit backend: нечитаемый каталог назван (tests/backend)" 'tests/backend'
+  t_out "test-unit backend: сообщение «не удалось прочитать»" 'не удалось прочитать'
+  t_out_absent "test-unit backend: нечитаемый каталог не выдан за SKIP" 'SKIP backend'
+  t "test-integration: tests/integration нечитаем → exit 2" 2 unreadable "$Q/tests/integration" bash "$Q/scripts/test-integration.sh"
+  t_out "test-integration: нечитаемый каталог назван (tests/integration)" 'tests/integration'
+  t_out "test-integration: сообщение «не удалось прочитать»" 'не удалось прочитать'
+  t_out_absent "test-integration: нечитаемый каталог не выдан за SKIP" 'SKIP integration'
+fi
+
 # ── 4b. check.sh на копии: lint + test-unit в составе, красное красит check.sh ──
 C="$TMP/chk"; mkproj "$C"
 t "check.sh (копия, зоны без тестов) → exit 0" 0 ut bash "$C/scripts/check.sh"
