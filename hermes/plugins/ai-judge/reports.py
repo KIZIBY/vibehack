@@ -156,6 +156,28 @@ def validate_flag_item(flag: Any) -> None:
         validate_evidence(ev, context=f"flag.evidence[{ev_idx}]")
 
 
+def validate_experts(experts: Any, role: str) -> None:
+    """experts — только роль business: [{name, domain, scores?}] (agent-report.schema.json)."""
+    if role != "business":
+        raise ValueError("experts is allowed only for role 'business'")
+    if not isinstance(experts, list):
+        raise ValueError("experts must be a list")
+    for i, ex in enumerate(experts):
+        if not isinstance(ex, dict):
+            raise ValueError(f"experts[{i}]: must be an object")
+        for req in ("name", "domain"):
+            if not isinstance(ex.get(req), str) or not ex[req].strip():
+                raise ValueError(f"experts[{i}]: '{req}' is required")
+        extra = set(ex) - {"name", "domain", "scores"}
+        if extra:
+            raise ValueError(f"experts[{i}]: unknown fields {sorted(extra)}")
+        sc = ex.get("scores", [])
+        if not isinstance(sc, list):
+            raise ValueError(f"experts[{i}]: scores must be a list")
+        for j, item in enumerate(sc):
+            validate_score_item(item, j)
+
+
 def get_role_report_path(run_id: str, role: str, scope: str = "project") -> Path:
     """Путь отчёта роли: runs/<run_id>/reports/<role>__<scope>.json (scope = submission_id | project)."""
     for label, val in (("run_id", run_id), ("role", role), ("scope", scope)):
@@ -164,12 +186,31 @@ def get_role_report_path(run_id: str, role: str, scope: str = "project") -> Path
     return DATA_DIR / "runs" / run_id / "reports" / f"{role}__{scope}.json"
 
 
-def resolve_scope(params: dict[str, Any], session_id: str | None) -> str:
-    """scope отчёта: scope сессии (не подменяется моделью), иначе submission_id из аргументов, иначе project."""
-    sess = guard.extract_scope(session_id)
-    if sess and sess != guard.PROJECT_SCOPE:
-        return sess
-    return params.get("submission_id") or guard.PROJECT_SCOPE
+def session_ctx(params: dict[str, Any], session_id: str | None, roles: set[str] | None = None) -> tuple[str, str, str]:
+    """(run_id, role, scope) только из session_id; расхождение с аргументами модели — отказ.
+
+    Для инструментов оценок scope обязан быть submission_id (не "project").
+    """
+    ctx = guard.parse_session_id(session_id)
+    if not ctx:
+        raise ValueError("valid session_id '<run_id>:<role>:<scope>' is required")
+    for key, actual in (("run_id", ctx["run_id"]), ("role", ctx["role"])):
+        if params.get(key) not in (None, "", actual):
+            raise ValueError(f"{key} in arguments does not match the session")
+    if params.get("submission_id") not in (None, "", ctx["scope"]):
+        raise ValueError("submission_id in arguments does not match the session scope")
+    allowed = roles if roles is not None else VALID_ROLES
+    if ctx["role"] not in allowed:
+        raise ValueError(f"role '{ctx['role']}' cannot submit this report (one of {sorted(allowed)})")
+    if ctx["scope"] == guard.PROJECT_SCOPE:
+        raise ValueError("session scope must be a submission_id, not 'project'")
+    return ctx["run_id"], ctx["role"], ctx["scope"]
+
+
+def _check_project_id(project_id: Any) -> str:
+    if not isinstance(project_id, str) or not guard._SAFE_ID.match(project_id) or ".." in project_id:
+        raise ValueError(f"invalid project_id: {project_id!r}")
+    return project_id
 
 
 def load_or_init_scores_doc(run_id: str, role: str, submission_id: str = "", rubric_version: int = 1, scope: str = "project") -> dict[str, Any]:
@@ -197,16 +238,8 @@ def load_or_init_scores_doc(run_id: str, role: str, submission_id: str = "", rub
 
 def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_scores: валидирует оценки, обновляет критерии (последний побеждает) и сохраняет."""
-    run_id = params.get("run_id") or guard.extract_run_id(session_id)
-    if not run_id:
-        raise ValueError("run_id is required")
-
-    role = params.get("role") or guard.extract_role(session_id)
-    if not role or role not in VALID_ROLES:
-        raise ValueError(f"valid role is required (one of {sorted(VALID_ROLES)})")
-
-    scope = resolve_scope(params, session_id)
-    submission_id = params.get("submission_id") or (scope if scope != guard.PROJECT_SCOPE else "")
+    run_id, role, scope = session_ctx(params, session_id)
+    submission_id = scope
     rubric_version = int(params.get("rubric_version") or 1)
 
     raw_scores = params.get("scores")
@@ -215,6 +248,10 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
 
     for idx, item in enumerate(raw_scores):
         validate_score_item(item, idx)
+
+    experts = params.get("experts")
+    if experts is not None:
+        validate_experts(experts, role)
 
     # Загружаем текущий отчёт роли для объединения оценок
     doc = load_or_init_scores_doc(run_id, role, submission_id=submission_id, rubric_version=rubric_version, scope=scope)
@@ -228,6 +265,9 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
         existing_scores[item["criterion_id"]] = item
     doc["scores"] = list(existing_scores.values())
 
+    if experts is not None:
+        doc["experts"] = experts
+
     if "summary" in params and isinstance(params["summary"], str):
         doc["summary"] = params["summary"]
 
@@ -239,13 +279,7 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
 
 def save_flag(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_flag: валидирует флаг и добавляет в список flags отчёта роли."""
-    run_id = params.get("run_id") or guard.extract_run_id(session_id)
-    if not run_id:
-        raise ValueError("run_id is required")
-
-    role = params.get("role") or guard.extract_role(session_id)
-    if not role or role not in VALID_ROLES:
-        raise ValueError(f"valid role is required (one of {sorted(VALID_ROLES)})")
+    run_id, role, scope = session_ctx(params, session_id)
 
     flag_data = params.get("flag")
     if not isinstance(flag_data, dict):
@@ -253,8 +287,7 @@ def save_flag(params: dict[str, Any], session_id: str | None = None) -> dict[str
 
     validate_flag_item(flag_data)
 
-    scope = resolve_scope(params, session_id)
-    doc = load_or_init_scores_doc(run_id, role, scope=scope)
+    doc = load_or_init_scores_doc(run_id, role, submission_id=scope, scope=scope)
     flags = doc.setdefault("flags", [])
     flags.append(flag_data)
 
@@ -266,11 +299,7 @@ def save_flag(params: dict[str, Any], session_id: str | None = None) -> dict[str
 
 def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_claims (роль critic-honesty)."""
-    run_id = params.get("run_id") or guard.extract_run_id(session_id)
-    if not run_id:
-        raise ValueError("run_id is required")
-
-    role = params.get("role") or guard.extract_role(session_id) or "critic-honesty"
+    run_id, role, scope = session_ctx(params, session_id, roles={"critic-honesty"})
 
     claims = params.get("claims")
     if not isinstance(claims, list):
@@ -289,8 +318,7 @@ def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[s
         for ev in evidence:
             validate_evidence(ev, context=f"claims[{idx}]")
 
-    scope = resolve_scope(params, session_id)
-    doc = load_or_init_scores_doc(run_id, role, scope=scope)
+    doc = load_or_init_scores_doc(run_id, role, submission_id=scope, scope=scope)
     doc["claims"] = claims
 
     report_path = get_role_report_path(run_id, role, scope)
@@ -302,9 +330,7 @@ def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[s
 def save_rubric(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_rubric (роль rubric)."""
     del session_id
-    project_id = params.get("project_id")
-    if not project_id:
-        raise ValueError("project_id is required")
+    project_id = _check_project_id(params.get("project_id"))
 
     criteria = params.get("criteria")
     if not isinstance(criteria, list) or len(criteria) == 0:
@@ -325,7 +351,7 @@ def save_rubric(params: dict[str, Any], session_id: str | None = None) -> dict[s
         "weights_were_missing": bool(params.get("weights_were_missing", False)),
     }
 
-    out_path = DATA_DIR / "projects" / str(project_id) / "rubric_draft.json"
+    out_path = DATA_DIR / "projects" / str(project_id) / "rubric-draft.json"
     write_atomic(out_path, doc)
 
     return {"success": True, "criteria_count": len(criteria), "out_path": str(out_path)}
@@ -334,9 +360,7 @@ def save_rubric(params: dict[str, Any], session_id: str | None = None) -> dict[s
 def save_ux_metrics(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_ux_metrics (роль design)."""
     del session_id
-    project_id = params.get("project_id")
-    if not project_id:
-        raise ValueError("project_id is required")
+    project_id = _check_project_id(params.get("project_id"))
 
     metrics = params.get("metrics")
     if not isinstance(metrics, list) or len(metrics) == 0:
@@ -356,7 +380,7 @@ def save_ux_metrics(params: dict[str, Any], session_id: str | None = None) -> di
         "metrics": metrics,
     }
 
-    out_path = DATA_DIR / "projects" / str(project_id) / "ux_metrics.json"
+    out_path = DATA_DIR / "projects" / str(project_id) / "ux-metrics.json"
     write_atomic(out_path, doc)
 
     return {"success": True, "metrics_count": len(metrics), "out_path": str(out_path)}
@@ -364,11 +388,7 @@ def save_ux_metrics(params: dict[str, Any], session_id: str | None = None) -> di
 
 def save_inventory_patch(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
     """Обрабатывает report_inventory_patch (роль sorter)."""
-    run_id = params.get("run_id") or guard.extract_run_id(session_id)
-    if not run_id:
-        raise ValueError("run_id is required")
-
-    submission_id = params.get("submission_id") or "default"
+    run_id, role, submission_id = session_ctx(params, session_id, roles={"sorter"})
     updates = params.get("updates")
     if not isinstance(updates, list):
         raise ValueError("updates must be a list")

@@ -63,8 +63,8 @@ def append_journal_event(event_dict: Dict[str, Any]) -> None:
     Append an event to runs/<run_id>/journal.jsonl in a thread-safe, sequential manner.
     """
     run_id = event_dict.get("run_id")
-    if not run_id:
-        return
+    if not isinstance(run_id, str) or not guard._SAFE_ID.match(run_id) or ".." in run_id:
+        return  # небезопасный run_id никогда не становится частью пути
 
     data_root = _get_data_root()
     run_dir = data_root / "runs" / run_id
