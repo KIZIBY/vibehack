@@ -29,7 +29,7 @@ ci-report.sh               fast   13
 memory-check.sh            fast   17
 state-recover.sh           fast   11
 check-entrypoint.sh        fast   18
-project-scripts.sh         fast   148
+project-scripts.sh         fast   162
 dev-env.sh                 fast   85
 pipeline-state.sh          full   31           600
 intake.sh                  full   44           600
