@@ -8,9 +8,10 @@
 (основная и два повтора с паузами 2 и 4 с); таймаут роли — собственный таймаут шлюза. Сбой роли не валит остальные:
 после исчерпания попыток ``ingest_report`` записывает ``no_data`` по критериям роли, задача получает ``no_data``.
 
-Отчёт роли лежит в ``runs/<run_id>/reports/<role>.json`` — путь общий для всех работ прогона. Пока контракт не
-различает работы в пути, запуск роли и приём её отчёта у разных работ выполняются по очереди
-(``serialize_reports=True``); после правки контракта флаг отключается.
+Отчёт роли лежит в ``runs/<run_id>/reports/<role>__<scope>.json`` (``scope`` — ``submission_id`` работы или
+``project`` для метрик UX), ``session_id`` и ``Idempotency-Key`` Hermes тоже включают scope: задания одной роли для
+разных работ не делят ни сессию, ни файл, поэтому запуск роли и приём отчёта у разных работ идут параллельно, без
+очередности (agent-run.md §1–§3).
 
 Секреты и пути машины в логи и причины не попадают: логируются только имена классов исключений.
 """
@@ -30,7 +31,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from ..common import new_id, utc_now_iso
 from ..db import session_scope
 from .events import EventBus
-from .gateway import AgentGateway, RoleResult, RoleRun
+from .gateway import PROJECT_SCOPE, AgentGateway, RoleResult, RoleRun, report_filename
 from .messages import post_system_message
 from .projects import advance_status, as_datetime, get_project
 from .reports import (
@@ -346,16 +347,13 @@ class _Plan:
 
 class Orchestrator:
     def __init__(self, session_factory: sessionmaker, gateway: AgentGateway, data_dir: Any, bus: EventBus, *,
-                 max_parallel: int = 5, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
-                 serialize_reports: bool = True) -> None:
+                 max_parallel: int = 5, sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
         self._factory = session_factory
         self._gateway = gateway
         self._data_dir = data_dir
         self._bus = bus
         self._max_parallel = max(1, int(max_parallel))
         self._sleep = sleep
-        self._serialize = serialize_reports
-        self._locks: dict[tuple[str, str], asyncio.Lock] = {}
 
     # ── вход ────────────────────────────────────────────────────────────────────────────────
 
@@ -494,16 +492,15 @@ class Orchestrator:
                 await self._db(self._set_attempt, task["id"], attempt)
                 self._progress(plan, task, "running", attempt)
             last = attempt == MAX_ATTEMPTS
-            async with self._report_guard(plan, task):
-                result = await self._call_gateway(plan, task, attempt)
-                tokens_in, tokens_out = _add(tokens_in, result.tokens_in), _add(tokens_out, result.tokens_out)
-                hermes_run_id = result.hermes_run_id or hermes_run_id
-                provider, model = result.provider or provider, result.model or model
-                if result.status == "completed" or last:
-                    outcome = await self._finalize(plan, task, result, attempt, {
-                        "hermes_run_id": hermes_run_id, "tokens_in": tokens_in, "tokens_out": tokens_out,
-                        "provider": provider, "model": model})
-                    break
+            result = await self._call_gateway(plan, task, attempt)
+            tokens_in, tokens_out = _add(tokens_in, result.tokens_in), _add(tokens_out, result.tokens_out)
+            hermes_run_id = result.hermes_run_id or hermes_run_id
+            provider, model = result.provider or provider, result.model or model
+            if result.status == "completed" or last:
+                outcome = await self._finalize(plan, task, result, attempt, {
+                    "hermes_run_id": hermes_run_id, "tokens_in": tokens_in, "tokens_out": tokens_out,
+                    "provider": provider, "model": model})
+                break
         state, reason, changed = outcome
         self._progress(plan, task, state, attempt)
         for criterion_id in changed:
@@ -514,11 +511,6 @@ class Orchestrator:
     def _set_attempt(session: Session, task_id: str, attempt: int) -> None:
         session.execute(text("UPDATE run_task SET attempt = :attempt WHERE id = :id"),
                         {"attempt": attempt, "id": task_id})
-
-    def _report_guard(self, plan: _Plan, task: dict[str, Any]) -> asyncio.Lock:
-        if not self._serialize:
-            return asyncio.Lock()
-        return self._locks.setdefault((plan.run_id, task["role"]), asyncio.Lock())
 
     async def _call_gateway(self, plan: _Plan, task: dict[str, Any], attempt: int) -> RoleResult:
         project_level = task["submission_id"] is None
@@ -613,7 +605,7 @@ class Orchestrator:
         from pathlib import Path
 
         root = Path(self._data_dir)
-        document, problem = read_json_file(root, "runs", plan.run_id, "reports", "design.json")
+        document, problem = read_json_file(root, "runs", plan.run_id, "reports", report_filename("design", PROJECT_SCOPE))
         if problem == "missing" or (isinstance(document, dict) and document.get("kind") != "ux_metrics"):
             document, problem = read_json_file(root, "projects", plan.project_id, "ux-metrics.json")
         if problem is not None:

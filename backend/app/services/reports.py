@@ -1,4 +1,4 @@
-"""Приём отчётов агентов: чтение ``runs/<run_id>/reports/<role>.json``, повторная проверка и запись результата.
+"""Приём отчётов агентов: чтение ``runs/<run_id>/reports/<role>__<submission_id>.json``, повторная проверка и запись.
 
 Контракт — ``specs/001-ai-judge-platform/contracts/agent-run.md`` §3 и ``agent-report.schema.json``. Плагину роли не
 доверяем: документ перепроверяется схемой и правилами backend, а любой изъян превращается в понятный итог, а не в
@@ -11,6 +11,10 @@
 - нет файла, битый JSON, документ не по схеме или с чужими идентификаторами — ВСЕ критерии роли получают ``no_data``
   (``agent_failure``) и пишется один флаг ``agent_failure``; в пояснении нет путей машины;
 - повторный вызов для той же задачи ничего не дублирует.
+
+Отчёт принимается только по пути своего scope (``<role>__<submission_id>.json``): документ, в котором ``submission_id``
+не равен scope из пути, отклоняется целиком (``identifier_mismatch``), поэтому задачи разных работ одной роли
+принимаются одновременно и не видят чужих оценок.
 
 Коммит делает вызывающий код: ``ingest_report`` пишет в переданную сессию.
 """
@@ -33,6 +37,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..common import new_id, utc_now_iso
+from .gateway import report_filename
 
 log = logging.getLogger(__name__)
 
@@ -280,9 +285,13 @@ def _rubric_criteria(session: Session, project_id: str, version: int) -> dict[st
 def _load_document(data_dir: Path, task: dict[str, Any]):
     """Возвращает ``((документ, ошибки_отдельных_оценок), None)`` или ``(None, (код, пояснение))``."""
     run_id, role = task["run_id"], task["role"]
-    if not (isinstance(run_id, str) and isinstance(role, str) and SAFE_NAME.match(run_id) and SAFE_NAME.match(role)):
+    if not (isinstance(run_id, str) and SAFE_NAME.match(run_id)):
         return None, ("missing", _FAILURE_NOTES["missing"])
-    raw, problem = read_json_file(data_dir, "runs", run_id, "reports", f"{role}.json")
+    try:
+        filename = report_filename(role, task["submission_id"])   # scope = submission_id работы
+    except ValueError:
+        return None, ("missing", _FAILURE_NOTES["missing"])
+    raw, problem = read_json_file(data_dir, "runs", run_id, "reports", filename)
     if problem is not None:
         return None, (problem, _FAILURE_NOTES[problem])
     if not isinstance(raw, dict):
@@ -306,6 +315,13 @@ def _load_document(data_dir: Path, task: dict[str, Any]):
     return (raw, item_errors), None
 
 
+def _report_ref(task: Mapping[str, Any]) -> str:
+    try:
+        return report_filename(task["role"], task["submission_id"])
+    except ValueError:
+        return clean_text(f"{task['role']}__{task['submission_id']}.json", 120)
+
+
 def _record_failure(session, task, criteria, role_criteria, failure, now) -> dict:
     code, note = failure
     for cid in role_criteria:
@@ -316,7 +332,7 @@ def _record_failure(session, task, criteria, role_criteria, failure, now) -> dic
              "related_submission_id, related_url, created_at) VALUES (:id, :task, :sub, NULL, 'agent_failure', :conf, "
              ":note, :evidence, NULL, NULL, :now)"),
         {"id": new_id(), "task": task["id"], "sub": task["submission_id"], "conf": 1.0, "note": clean_text(note),
-         "evidence": json.dumps([{"kind": "file", "ref": f"reports/{clean_text(task['role'], 60)}.json"}],
+         "evidence": json.dumps([{"kind": "file", "ref": f"reports/{_report_ref(task)}"}],
                                 ensure_ascii=False), "now": now})
     log.error("отчёт роли отклонён целиком", extra={"run_task_id": task["id"], "role": str(task["role"])[:60],
                                                    "reason": code})
