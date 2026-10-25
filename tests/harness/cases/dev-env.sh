@@ -120,7 +120,7 @@ t "dev.sh: блок fake-шлюза идёт после backend и frontend" 0 g
 
 # 4c. .env подхватывается и виден процессам; JUDGE_DATA_DIR из .env создаётся
 D3="$TMP/d3"; mkdev "$D3" gateway
-printf '# комментарий\nJUDGE_PROBE=from-dotenv\nJUDGE_DATA_DIR=%s\n' "$TMP/custom data" > "$D3/.env"
+printf '# комментарий\nJUDGE_PROBE=from-dotenv\nJUDGE_DATA_DIR="%s"\n' "$TMP/custom data" > "$D3/.env"
 t "dev.sh с .env → exit 0" 0 rundev "$D3" bash scripts/dev.sh
 t "dev.sh: переменная из .env видна процессу backend" 0 loggrep '^py -m uvicorn .*probe=from-dotenv'
 t "dev.sh: переменная из .env видна fake-шлюзу" 0 loggrep '^py -m app\.fake_gateway .*probe=from-dotenv'
