@@ -43,14 +43,14 @@ class DesignerBrowserSpikeTest(unittest.TestCase):
         self.assertIn("404", errors[1])
 
     def test_screenshot_path_isolation(self):
-        session_id = "role:design:run_spike_1"
+        session_id = "run_spike_1:design:project"
         out_path = browser.get_screenshot_destination(session_id, viewport=(1440, 900), name="home")
         self.assertTrue(out_path.startswith("runs/run_spike_1/browser/"))
         self.assertTrue(out_path.endswith("home_1440x900.png"))
 
     def test_concurrent_sessions_isolation(self):
-        s1 = browser.BrowserSessionContext(session_id="role:design:run_1")
-        s2 = browser.BrowserSessionContext(session_id="role:design:run_2")
+        s1 = browser.BrowserSessionContext(session_id="run_1:design:project")
+        s2 = browser.BrowserSessionContext(session_id="run_2:design:project")
 
         s1.record_console_error("Error in run 1")
         s2.record_console_error("Error in run 2")

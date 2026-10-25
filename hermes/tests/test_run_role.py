@@ -134,7 +134,7 @@ class TestRunRoleContract(unittest.TestCase):
         shutil.copytree(fixture_dir, data_dir)
         report_dir = data_dir / "runs" / run_id / "reports"
         report_dir.mkdir(parents=True, exist_ok=True)
-        report_file = report_dir / "code.json"
+        report_file = report_dir / "code__sample_work.json"
 
         # Pre-seed report conforming to agent-report.schema.json
         sample_report = {
@@ -179,8 +179,8 @@ class TestRunRoleContract(unittest.TestCase):
         )
 
         self.assertEqual(proc.returncode, 0, f"run_role failed: {proc.stderr}\nstdout: {proc.stdout}")
-        self.assertIn("code.json", proc.stdout)
-        self.assertIn(f"runs/{run_id}/reports/code.json", proc.stdout.replace("\\", "/"))
+        self.assertIn("code__sample_work.json", proc.stdout)
+        self.assertIn(f"runs/{run_id}/reports/code__sample_work.json", proc.stdout.replace("\\", "/"))
 
         # Verify auth and idempotency
         self.assertTrue(any("secret-token-xyz" in h for h in MockHermesHandler.auth_received))
