@@ -312,7 +312,6 @@ Severity: P3 — демо запускается одним процессом; 
 **Журнал:**
 - 2026-10-25 · [developer] заведено по ревью Codex (T021/T022).
 
-<<<<<<< HEAD
 ### B-016 · [developer] intake: остатки ревью T044–T047 (P2/P3)
 
 - **Тип:** bug
@@ -352,8 +351,8 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 
 **Журнал:**
 - 2026-10-25 · [developer] заведено по ревью T049.
-=======
-### B-016 · [developer] agents: backend должен перейти на session_id с scope и файл отчёта <role>__<scope>.json
+
+### B-018 · [developer] agents: backend должен перейти на session_id с scope и файл отчёта <role>__<scope>.json
 
 - **Тип:** contract
 - **Приоритет:** P1
@@ -372,7 +371,7 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 **Журнал:**
 - 2026-10-25 · [agents] заведено; плагин и тесты в PR зоны hermes.
 
-### B-017 · [developer] agents: мелкие замечания ревью (P2)
+### B-019 · [developer] agents: мелкие замечания ревью (P2)
 
 - **Тип:** tech-debt
 - **Приоритет:** P3
@@ -388,7 +387,7 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 - [ ] ревью P2: `evilcheck.check_report` требует полный путь файла в evidence флага (а навыки допускают sha/URL/слайд); порог NFR-010 для сдвига на злых работах не задан; `rubric_version` берётся из аргументов модели (должен приходить из входа запуска); сигнатуры хуков журнала (`tool`) и guard (`tool_name`) сверить на живом Hermes; `delegate_task` в business: toolsets экспертов (только чтение) и запрет `report_*`; `test_report_experts` задаёт `source_ref` рубрики объектом (по схеме строка), `save_rubric` не валидирует по схеме;
 - [ ] `docker-compose.yml` монтирует только `skills/ai-judge`; новые навыки `ai-judge-*` не смонтированы (сейчас инструкции передаёт run_role/backend из репозитория, монтирование нужно для самостоятельного вызова навыков в Hermes).
 
-### B-018 · [developer] agents: T001 и T003 отмечены выполненными по симуляции
+### B-020 · [developer] agents: T001 и T003 отмечены выполненными по симуляции
 
 - **Тип:** process
 - **Приоритет:** P2
@@ -400,4 +399,3 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 
 Желаемое поведение (чек-лист приёмки):
 - [ ] замер выполнен, цифры в research.md заменены, T001/T003 подтверждены.
->>>>>>> 54587c2 (docs(hermes): tasks T065-T068/T071/T072, чек-лист спайков в research.md, находки в backlog, spike_live.sh)
