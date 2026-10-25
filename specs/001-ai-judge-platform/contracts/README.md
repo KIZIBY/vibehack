@@ -19,7 +19,7 @@
 | Зона | Работает без… | Через что |
 |---|---|---|
 | D (UI) | настоящего backend | мок-сервер по `openapi.yaml` (MSW), примеры ответов — в самой схеме |
-| A (backend) | Hermes и OpenAI | `FakeAgentGateway`: отдаёт заранее записанные отчёты из `tests/fixtures/agent-reports/` |
+| A (backend) | Hermes и OpenAI | `FakeAgentGateway`: отдаёт заранее записанные отчёты из `tests/fixtures/agent-reports/` и кладёт их в `runs/<run_id>/reports/<role>__<scope>.json` |
 | A (backend) | настоящего intake | готовые `inventory.json` из `tests/fixtures/inventories/` |
 | B (intake) | backend | запускается как `python -m intake <каталог работы> --out <каталог>` и пишет `inventory.json` |
 | C (agents) | backend | `hermes/scripts/run_role.sh <role> <каталог работы>` ходит прямо в шлюз и складывает отчёт в файл |

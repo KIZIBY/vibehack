@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://vibehack.local/contracts/agent-report.schema.json",
   "title": "AgentDocument",
-  "description": "Документы, которые роли сдают инструментами плагина ai-judge (зона C): report_rubric, report_ux_metrics, report_scores, report_flag, report_claims. Плагин проверяет документ по этой схеме ДО сохранения и при ошибке возвращает модели текст ошибки, чтобы она исправила вызов в том же запуске. Принятый документ лежит в runs/<run_id>/reports/<role>.json (для rubric и design-метрик — projects/<project_id>/…); backend читает файл после завершения запуска.",
+  "description": "Документы, которые роли сдают инструментами плагина ai-judge (зона C): report_rubric, report_ux_metrics, report_scores, report_flag, report_claims. Плагин проверяет документ по этой схеме ДО сохранения и при ошибке возвращает модели текст ошибки, чтобы она исправила вызов в том же запуске. Принятый документ лежит в runs/<run_id>/reports/<role>__<scope>.json, где scope — submission_id работы или литерал project (для rubric и design-метрик; их основной путь — projects/<project_id>/…, запасной — rubric__project.json и design__project.json); плагин берёт run_id, role и scope только из session_id (аргументы инструмента, не совпадающие с ним, отклоняются); backend читает файл после завершения запуска и отклоняет документ, чей submission_id не равен scope из пути.",
   "oneOf": [
     {
       "$ref": "#/$defs/scores_document"

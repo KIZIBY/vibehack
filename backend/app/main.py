@@ -1,5 +1,7 @@
 """Фабрика приложения. Запуск: uvicorn app.main:app --app-dir backend."""
+import asyncio
 import importlib
+import logging
 import pkgutil
 import time
 from contextlib import asynccontextmanager
@@ -20,6 +22,7 @@ from .health import router as health_router
 from .logging import configure_logging
 from .middleware import RequestContextMiddleware
 from .repositories.base import VersionConflict
+from .services import recovery
 from .services.netguard import UnsafeUrl
 from .services.rubric import RubricNotConfirmed
 from .services.storage import PayloadTooLarge, UnsafePath
@@ -48,6 +51,10 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         configure_logging(settings.log_level)
+        try:
+            await asyncio.to_thread(recovery.recover_interrupted_work, app.state.session_factory)
+        except Exception:
+            logging.getLogger(__name__).error("восстановление прерванной работы не удалось", exc_info=True)
         yield
         app.state.engine.dispose()
 

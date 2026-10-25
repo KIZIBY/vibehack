@@ -478,3 +478,25 @@ def test_rubrics_share_project_id_with_inventory(name: str):
     assert doc.get("project_id") == expected, (
         f"rubrics/{name}: project_id {doc.get('project_id')!r} не совпадает с inventories/complete.json ({expected!r})"
     )
+
+
+# ─────────────────────────────── agent-run.md: scope отчёта и сессии ───────────────────────────────
+
+def _agent_run_text() -> str:
+    return re.sub(r"\s+", " ", (CONTRACTS_DIR / "agent-run.md").read_text(encoding="utf-8"))
+
+
+def test_agent_run_fixes_scope_formats():
+    text = _agent_run_text()
+    for fragment in ('"session_id": "<run_id>:<role>:<scope>"', "`Idempotency-Key: <run_id>:<role>:<scope>:<attempt>`",
+                     "reports/<role>__<scope>.json", "`project`"):
+        assert fragment in text, fragment
+    assert "reports/<role>.json" not in text
+
+
+def test_agent_run_takes_run_id_role_and_scope_from_session_not_from_model_arguments():
+    """Аргументы инструмента заполняет модель, читающая материалы участников: путь отчёта нельзя строить из них."""
+    text = _agent_run_text()
+    assert "вычисляет его из аргументов инструмента" not in text
+    assert "только из `session_id`" in text
+    assert "`report_rejected`" in text and "не совпада" in text

@@ -24,7 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from ..common import new_id, utc_now_iso
 from ..db import session_scope
 from ..repositories.base import VersionConflict, update_versioned
-from .gateway import AgentGateway, RoleRun
+from .gateway import AgentGateway, RoleRun, report_filename
 from .reports import SAFE_NAME, clean_text, document_validator, read_json_file, remove_file
 
 log = logging.getLogger(__name__)
@@ -360,7 +360,7 @@ async def _build_draft(session_factory, gateway, data_dir: Path, project_id: str
 
     document, problem = read_json_file(data_dir, "projects", project_id, "rubric-draft.json")
     if problem == "missing":   # запасной путь: отчёт, который кладёт шлюз (FakeAgentGateway, agent-run.md §3)
-        document, problem = read_json_file(data_dir, "runs", run_id, "reports", "rubric.json")
+        document, problem = read_json_file(data_dir, "runs", run_id, "reports", report_filename("rubric", run.scope))
     if problem is not None:
         return f"draft_{problem}"
     criteria = _validated_draft(document, project_id)

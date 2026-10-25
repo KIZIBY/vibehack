@@ -15,7 +15,7 @@
     "role": {
       "enum": ["rubric", "sorter", "code", "business", "design", "critic-uniqueness", "critic-honesty", "backend", null]
     },
-    "session_id": { "type": ["string", "null"], "description": "Формат: <run_id>:<role>." },
+    "session_id": { "type": ["string", "null"], "description": "Формат: <run_id>:<role>:<scope>; scope — submission_id работы или литерал project (agent-run.md §2)." },
     "seq": { "type": "integer", "minimum": 0, "description": "Порядковый номер внутри run_id; по нему backend отбрасывает дубли при повторном чтении файла." },
     "event": {
       "enum": [

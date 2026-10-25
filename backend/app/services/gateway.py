@@ -2,7 +2,9 @@
 
 Контракт — ``specs/001-ai-judge-platform/contracts/agent-run.md`` §2–§4 и ``docs/design-doc.md`` §4.
 Шлюз запускает роль, ждёт терминального статуса и возвращает ``RoleResult``; структурный результат роли
-лежит в файле ``runs/<run_id>/reports/<role>.json`` — его читает и перепроверяет вызывающий код, не шлюз.
+лежит в файле ``runs/<run_id>/reports/<role>__<scope>.json`` — его читает и перепроверяет вызывающий код, не шлюз.
+``scope`` — ``submission_id`` для задач работы и литерал ``project`` для project-level задач (рубрика, метрики UX):
+разные работы одной роли внутри прогона не делят ни сессию Hermes, ни ключ идемпотентности, ни файл отчёта.
 
 Секреты: ключ API живёт только в заголовке запроса; в ``reason``, логи и ``repr`` не попадает ни он, ни
 текст исключений httpx (в них бывают заголовки и адреса) — только имя класса ошибки.
@@ -31,6 +33,21 @@ BACKOFF_CAP = 30.0
 POST_NETWORK_RETRIES = 2        # повтор POST после потери ответа — с тем же Idempotency-Key
 POLL_ERRORS_TOLERATED = 3       # столько подряд сетевых сбоев опроса терпим, потом stop и failed
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+PROJECT_SCOPE = "project"
+SCOPE_SEPARATOR = "__"          # между ролью и scope в имени файла отчёта; в самих ролях и scope его быть не может
+
+
+def run_scope(submission_id: str | None) -> str:
+    """``scope`` задачи: ``submission_id`` работы или ``project`` для project-level задачи (agent-run.md §1)."""
+    return PROJECT_SCOPE if submission_id is None else submission_id
+
+
+def report_filename(role: str, scope: str) -> str:
+    """Имя принятого документа роли: ``<role>__<scope>.json``. Небезопасные части (обход каталога, ``__``) — ValueError."""
+    for name, value in (("role", role), ("scope", scope)):
+        if not (isinstance(value, str) and _SAFE_NAME.match(value)) or SCOPE_SEPARATOR in value:
+            raise ValueError(f"недопустимый {name}: {value!r}")
+    return f"{role}{SCOPE_SEPARATOR}{scope}.json"
 
 
 @dataclass(frozen=True)
@@ -45,6 +62,10 @@ class RoleRun:
     instructions: str
     input: str
     attempt: int = 1
+
+    @property
+    def scope(self) -> str:
+        return run_scope(self.submission_id)
 
 
 @dataclass(frozen=True)
@@ -168,8 +189,9 @@ class HermesGateway:
 
     async def _start(self, run: RoleRun) -> str | RoleResult:
         """POST /v1/runs с повтором после 429 (2 с, удваивая до 30 с). Возвращает id запуска Hermes."""
-        headers = {**self._headers(), "Idempotency-Key": f"{run.run_id}:{run.role}:{run.attempt}"}
-        body = {"session_id": f"{run.run_id}:{run.role}", "instructions": run.instructions, "input": run.input}
+        session_id = f"{run.run_id}:{run.role}:{run.scope}"
+        headers = {**self._headers(), "Idempotency-Key": f"{session_id}:{run.attempt}"}
+        body = {"session_id": session_id, "instructions": run.instructions, "input": run.input}
         delay = BACKOFF_START
         for retry in range(self._max_attempts_429 + 1):
             response = await self._post_run(headers, body)
@@ -262,9 +284,9 @@ class FakeAgentGateway:
         return self._probe_state
 
     async def run_role(self, run: RoleRun) -> RoleResult:
-        for name, value in (("run_id", run.run_id), ("role", run.role)):
-            if not _SAFE_NAME.match(value):
-                raise ValueError(f"недопустимый {name}: {value!r}")
+        if not _SAFE_NAME.match(run.run_id):
+            raise ValueError(f"недопустимый run_id: {run.run_id!r}")
+        filename = report_filename(run.role, run.scope)
         self.calls.append(run)
         fake_id = f"fake-{run.run_id}-{run.role}"
 
@@ -284,17 +306,17 @@ class FakeAgentGateway:
             document["rubric_version"] = run.rubric_version
         if run.submission_id is not None and (carries_ids or "submission_id" in document):
             document["submission_id"] = run.submission_id
-        self._write(run, document)
+        self._write(run, filename, document)
         return RoleResult(status="completed", hermes_run_id=fake_id, output="fake report written")
 
-    def _write(self, run: RoleRun, document: Mapping[str, Any]) -> None:
+    def _write(self, run: RoleRun, filename: str, document: Mapping[str, Any]) -> None:
         target_dir = self._data_dir / "runs" / run.run_id / "reports"
         target_dir.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(dir=target_dir, prefix=f".{run.role}.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(document, handle, ensure_ascii=False, indent=2)
-            os.replace(tmp_name, target_dir / f"{run.role}.json")
+            os.replace(tmp_name, target_dir / filename)
         except BaseException:
             Path(tmp_name).unlink(missing_ok=True)
             raise
