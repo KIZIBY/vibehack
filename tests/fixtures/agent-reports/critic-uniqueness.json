@@ -1,0 +1,52 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "critic-uniqueness",
+  "rubric_version": 1,
+  "scores": [
+    {
+      "criterion_id": "crit-4",
+      "status": "scored",
+      "score": 4,
+      "max_score": 10,
+      "justification": "Идея электронной очереди не нова; оригинальна только часть с прогнозом времени ожидания. Кроме того, в проекте найдено частичное совпадение кода с работой sub-team-gamma (сходство 0,42, два фрагмента в сервисе очереди и утилитах времени).",
+      "evidence": [
+        {
+          "kind": "search",
+          "ref": "электронная очередь прогноз времени ожидания МФЦ"
+        },
+        {
+          "kind": "file",
+          "ref": "backend/app/services/queue.py:12-58"
+        },
+        {
+          "kind": "file",
+          "ref": "backend/app/utils/time.py:1-22"
+        }
+      ],
+      "confidence": 0.6
+    }
+  ],
+  "flags": [
+    {
+      "type": "plagiarism",
+      "criterion_id": "crit-4",
+      "confidence": 0.5,
+      "note": "Два фрагмента сервиса очереди и утилит времени совпадают с работой sub-team-gamma (47 и 22 строки); направление заимствования по материалам определить нельзя.",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "backend/app/services/queue.py:12-58"
+        },
+        {
+          "kind": "file",
+          "ref": "backend/app/utils/time.py:1-22"
+        }
+      ],
+      "related_submission_id": "sub-team-gamma"
+    }
+  ],
+  "summary": "Умеренная новизна и частичное совпадение кода с соседней работой."
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "ts": "2026-10-24T10:05:42.318Z",
+  "project_id": "proj-hack-2026",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "code",
+  "session_id": "run-20261024-001:code",
+  "seq": 14,
+  "event": "tool_call",
+  "tool": "read_file",
+  "args_summary": "path=backend/app/services/queue.py lines=1-120",
+  "result_summary": "Прочитано 120 строк, найден класс QueueService",
+  "refs": [
+    "backend/app/services/queue.py:1-120"
+  ],
+  "duration_ms": 38,
+  "model": null,
+  "provider": null,
+  "tokens_in": null,
+  "tokens_out": null,
+  "cost_usd": null,
+  "actor": null,
+  "source": "hermes.post_tool_call"
+}

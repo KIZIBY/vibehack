@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "security",
+  "rubric_version": 1,
+  "scores": [
+    {
+      "criterion_id": "crit-1",
+      "status": "scored",
+      "score": 8,
+      "max_score": 10,
+      "justification": "Слои разделены: маршруты, сервисы и доступ к данным в разных модулях; зависимости направлены внутрь, есть типизация и линтер в CI.",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "backend/app/services/queue.py:12-96",
+          "quote": "class QueueService: ..."
+        },
+        {
+          "kind": "file",
+          "ref": ".github/workflows/ci.yml:1-30"
+        }
+      ],
+      "confidence": 0.8
+    }
+  ],
+  "flags": [],
+  "summary": "Аккуратная слоистая архитектура и рабочий CI; слабое место — отсутствие интеграционных тестов."
+}

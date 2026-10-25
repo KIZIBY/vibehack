@@ -1,0 +1,13 @@
+{
+  "schema_version": "1",
+  "project_id": "proj-hack-2026",
+  "generated_at": "2026-10-24T09:40:00Z",
+  "pairs": [
+    {
+      "submission_a": "sub-team-alpha",
+      "submission_b": "sub-team-gamma",
+      "similarity": 1.4,
+      "fragments": []
+    }
+  ]
+}

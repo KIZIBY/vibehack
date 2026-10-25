@@ -1,0 +1,87 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "critic-honesty",
+  "rubric_version": 1,
+  "scores": [
+    {
+      "criterion_id": "crit-5",
+      "status": "scored",
+      "score": 5,
+      "max_score": 10,
+      "justification": "Из трёх проверенных заявлений подтверждено одно, одно не найдено в коде, одно противоречит данным.",
+      "evidence": [
+        {
+          "kind": "claim",
+          "ref": "claim-1"
+        },
+        {
+          "kind": "claim",
+          "ref": "claim-2"
+        },
+        {
+          "kind": "claim",
+          "ref": "claim-3"
+        }
+      ],
+      "confidence": 0.7
+    }
+  ],
+  "flags": [],
+  "claims": [
+    {
+      "claim_id": "claim-1",
+      "text": "Сервис работает с нагрузкой до 500 одновременных посетителей",
+      "source_ref": {
+        "kind": "slide",
+        "ref": "deck.pdf#8",
+        "quote": "Выдерживает 500 одновременных посетителей"
+      },
+      "verdict": "not_found",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "backend/tests",
+          "quote": "нагрузочных тестов нет"
+        }
+      ]
+    },
+    {
+      "claim_id": "claim-2",
+      "text": "Прогноз времени ожидания построен на модели градиентного бустинга",
+      "source_ref": {
+        "kind": "slide",
+        "ref": "deck.pdf#5",
+        "quote": "Прогноз на градиентном бустинге"
+      },
+      "verdict": "confirmed",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "backend/app/ml/wait_forecast.py:20-48",
+          "quote": "GradientBoostingRegressor("
+        }
+      ]
+    },
+    {
+      "claim_id": "claim-3",
+      "text": "Интеграция с единым порталом госуслуг уже работает",
+      "source_ref": {
+        "kind": "video",
+        "ref": "demo.mp4@00:02:30",
+        "quote": "вот тут у нас подключён портал"
+      },
+      "verdict": "contradicted",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "backend/app/integrations/gosuslugi.py:1-15",
+          "quote": "заглушка, возвращает фиксированный ответ"
+        }
+      ]
+    }
+  ],
+  "summary": "Часть заявлений в презентации опережает реализацию."
+}
