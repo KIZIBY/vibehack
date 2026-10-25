@@ -315,6 +315,53 @@ def test_stale_flag_only_on_cells_with_a_value():
     assert result["stale_criteria"] == []
 
 
+# ─────────────────────────────── сопоставление критериев между версиями рубрики ───────────────────────────────
+# data-model.md: criterion.id у каждой версии рубрики свой, оценки хранят старый criterion_id; сопоставление
+# критериев между версиями — по name (FR-007). Находка ревью (P0): оценки прошлой версии не должны пропадать.
+
+def old_version_score(old_id, name, score, version=1):
+    return L().CriterionScore(criterion_id=old_id, criterion_name=name, status="scored", agent_score=score,
+                              rubric_version=version, justification="ж", evidence=(ev(),), confidence=0.5)
+
+
+def test_scores_of_previous_rubric_version_are_matched_by_criterion_name():
+    scores = [old_version_score("old-c1", "Код", 8), old_version_score("old-c2", "Бизнес", 4)]
+    result = board([sub("s1", "Alpha", scores)], rub=rubric(version=2), changed_criteria={"c1": 2})
+
+    row = result["rows"][0]
+    assert row["cells"]["c1"]["status"] == "scored" and row["cells"]["c1"]["score"] == 8
+    assert row["cells"]["c2"]["score"] == 4
+    assert row["total"] == expected_total([("c1", 8, 10, 2), ("c2", 4, 5, 1)])
+    assert row["cells"]["c1"]["stale"] is True and row["cells"]["c2"]["stale"] is False
+    assert result["stale_criteria"] == ["c1"]
+
+
+def test_newer_rubric_version_score_wins_over_older_one_with_the_same_name():
+    scores = [
+        scored("c1", 9, version=2),                 # оценка по текущей версии (id совпадает)
+        old_version_score("old-c1", "Код", 3, 1),   # прошлая версия, пришла позже в списке
+    ]
+    result = board([sub("s1", "Alpha", scores)], rub=rubric(version=2))
+
+    assert result["rows"][0]["cells"]["c1"]["score"] == 9
+
+
+def test_name_match_requires_exact_name_and_unnamed_foreign_ids_stay_ignored():
+    scores = [old_version_score("old-x", "Совсем другой критерий", 8), scored("zzz", 5)]
+    result = board([sub("s1", "Alpha", scores)], rub=rubric(version=2))
+
+    assert result["rows"][0]["total"] is None
+
+
+def test_override_of_previous_version_entry_follows_the_name_too():
+    entry = L().CriterionScore(criterion_id="old-c1", criterion_name="Код", status="no_data",
+                               rubric_version=1, no_data_reason="нет", override=override(6))
+    result = board([sub("s1", "Alpha", [entry])], rub=rubric(version=2))
+
+    cell = result["rows"][0]["cells"]["c1"]
+    assert cell["score"] == 6 and cell["overridden"] is True
+
+
 # ─────────────────────────────── сортировка и фильтры ───────────────────────────────
 
 def three():

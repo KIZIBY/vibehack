@@ -279,6 +279,80 @@ def test_429_custom_max_attempts():
     assert len(requests) == 3
 
 
+# ─────────────────────────────── потеря ответа сети (находка ревью P1) ───────────────────────────────
+# Запуск мог быть принят Hermes, а ответ потерян: повтор POST с ТЕМ ЖЕ Idempotency-Key не плодит запуск;
+# если опрос не удаётся, оставлять запуск работающим нельзя (гонка записи отчёта) — best-effort stop.
+
+def test_post_transport_error_is_retried_with_the_same_idempotency_key():
+    calls = {"n": 0}
+
+    def handler(request):
+        if request.method == "POST" and request.url.path == "/v1/runs":
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise httpx.ReadError(f"lost response {KEY}")
+            return json_response({"run_id": "h-1", "status": "queued"})
+        return json_response(COMPLETED)
+
+    gw, requests, sleeps, _ = make_gateway(handler)
+
+    result = run_async(gw.run_role(make_run()))
+
+    assert result.status == "completed"
+    posts = [r for r in requests if r.method == "POST"]
+    assert len(posts) == 3
+    assert {p.headers["Idempotency-Key"] for p in posts} == {"run-1:code:1"}
+    assert len(sleeps) == 2 and all(s > 0 for s in sleeps)
+
+
+def test_post_transport_error_gives_up_after_bounded_retries():
+    def handler(request):
+        raise httpx.ConnectError(f"down {KEY}")
+
+    gw, requests, _, _ = make_gateway(handler)
+
+    result = run_async(gw.run_role(make_run()))
+
+    assert result.status == "failed" and result.reason.startswith("network_error")
+    assert KEY not in repr(result)
+    assert len(requests) == 3
+
+
+def test_transient_poll_errors_are_tolerated():
+    state = {"n": 0}
+
+    def handler(request):
+        if request.method == "POST":
+            return json_response({"run_id": "h-1", "status": "queued"})
+        state["n"] += 1
+        if state["n"] <= 2:
+            raise httpx.ReadTimeout("slow")
+        return json_response(COMPLETED)
+
+    gw, _, _, _ = make_gateway(handler)
+
+    result = run_async(gw.run_role(make_run()))
+
+    assert result.status == "completed" and result.hermes_run_id == "h-1"
+
+
+def test_persistent_poll_errors_fail_and_stop_the_orphan_run():
+    def handler(request):
+        if request.method == "POST" and request.url.path == "/v1/runs":
+            return json_response({"run_id": "h-1", "status": "queued"})
+        if request.url.path.endswith("/stop"):
+            return json_response({"ok": True})
+        raise httpx.ReadTimeout(f"slow {KEY}")
+
+    gw, requests, _, _ = make_gateway(handler)
+
+    result = run_async(gw.run_role(make_run()))
+
+    assert result.status == "failed" and result.hermes_run_id == "h-1"
+    assert result.reason.startswith("network_error") and KEY not in repr(result)
+    assert any(r.method == "POST" and r.url.path == "/v1/runs/h-1/stop" for r in requests)
+
+
 # ─────────────────────────────── таймаут ───────────────────────────────
 
 def test_role_timeout_stops_run_and_returns_timeout():
@@ -672,3 +746,18 @@ def test_fake_rejects_path_traversal_in_ids(tmp_path, run_id, role):
     with pytest.raises(ValueError):
         run_async(fake.run_role(make_run(run_id=run_id, role=role)))
     assert not (tmp_path.parent / "evil").exists()
+
+
+def test_fake_substitutes_rubric_version_from_the_run(tmp_path):
+    from app.services.gateway import FakeAgentGateway
+
+    doc = scores_doc("code")
+    doc["rubric_version"] = 1
+    fake = FakeAgentGateway(tmp_path, {"code": doc})
+
+    run_async(fake.run_role(make_run(rubric_version=5)))
+
+    written = json.loads((tmp_path / "runs" / "run-1" / "reports" / "code.json").read_text(encoding="utf-8"))
+    assert written["rubric_version"] == 5
+    report_validator().validate(written)
+    assert doc["rubric_version"] == 1   # шаблон не меняется
