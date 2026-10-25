@@ -412,6 +412,7 @@ class Stream:
         self.sent = asyncio.Queue()
         self.incoming = asyncio.Queue()
         raw = [(k.lower().encode(), v.encode()) for k, v in (headers or {}).items()]
+        raw.append((b"cookie", f"session={app.state.sessions.issue('demo')}".encode()))   # /api/* требует сессию (T021)
         self.scope = {
             "type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1", "method": "GET",
             "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": b"", "root_path": "",
@@ -451,7 +452,7 @@ class Stream:
 def make_app(bus=None, heartbeat=None):
     from app.config import Settings
     from app.main import create_app
-    app = create_app(Settings())
+    app = create_app(Settings(session_secret="events-test-secret-0123456789"))
     if bus is not None:
         app.state.event_bus = bus
     if heartbeat is not None:
@@ -580,3 +581,13 @@ def test_http_bad_project_id_is_404(project_id):
     status, body = run(scenario())
     assert status == 404
     assert json.loads(body)["error"]["code"] == "not_found"
+
+
+def test_events_endpoint_requires_session():
+    """SSE-поток проекта под защитой /api/*: без cookie сессии — 401, подписка не создаётся."""
+    from fastapi.testclient import TestClient
+    bus = make_bus()
+    app = make_app(bus)
+    resp = TestClient(app).get("/api/v1/projects/p/events")
+    assert resp.status_code == 401
+    assert bus.subscriber_count("p") == 0
