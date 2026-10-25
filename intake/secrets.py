@@ -8,7 +8,7 @@ PATTERNS = (
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"\b(?:sk-live-|sk-proj-|sk-ant-api03-|sk-ant-admin01-)[A-Za-z0-9_-]{12,}\b"),
     re.compile(r"\bghp_[A-Za-z0-9]{20,}\b"),
-    re.compile(r"(https?://)([^\s:/]+):([^\s@]+)@", re.IGNORECASE),
+    re.compile(r"(https?://)([^\s:/@]{1,256}):([^\s@]{1,256})@", re.IGNORECASE),
 )
 
 

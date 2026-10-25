@@ -101,14 +101,21 @@ def clone_repository(source: str, destination: str | Path) -> Path:
     """Клон каталога или публичного http(s)-URL без хуков, сабмодулей, LFS и симлинков."""
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists() and (not destination.is_dir() or any(destination.iterdir())):
+        raise RepositoryError("каталог назначения уже существует и не пуст")
+    created = not destination.exists()
     safe = ["-c", "core.hooksPath=/dev/null", "-c", "core.symlinks=false", "-c", "core.fsmonitor=false", "-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false", "-c", "protocol.ext.allow=never"]
     if "://" in source or source.startswith("ext::"):
         try:
             addresses = web._public_host(source)
         except (web.SSRFBlocked, web.FetchFailed) as exc:
             raise RepositoryError(f"ссылка отклонена: {exc}") from exc
-        parsed = urlsplit(source)
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            parsed = urlsplit(source)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except ValueError as exc:
+            raise RepositoryError("ссылка отклонена: недопустимый порт") from exc
+        port = port or (443 if parsed.scheme == "https" else 80)
         safe += ["-c", f"http.curloptResolve={parsed.hostname}:{port}:{addresses[0]}", "-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=30",
                  "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.http.allow=always", "-c", "http.followRedirects=false"]
         extra: list[str] = []
@@ -119,7 +126,11 @@ def clone_repository(source: str, destination: str | Path) -> Path:
     try:
         _run_limited(command, watch=destination, cap=MAX_BYTES * HARD_CAP_FACTOR)
     except RepositoryError:
-        shutil.rmtree(destination, ignore_errors=True)
+        if created:
+            shutil.rmtree(destination, ignore_errors=True)
+        else:
+            for child in destination.iterdir():
+                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(missing_ok=True)
         raise
     _strip_symlinks(destination)
     return destination
