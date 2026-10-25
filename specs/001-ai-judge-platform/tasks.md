@@ -192,6 +192,6 @@ lease разные (`backend-core`, `backend-eval`), а пути берутся 
 - [ ] T092 [S2] Замеры производительности и масштаба: одна работа ≤ 10 мин (p95), 20 работ ≤ 30 мин, загрузка ≤ 2 с, таблица 200×15 ≤ 2 с; результат — в `research.md`. — NFR-001, NFR-002, NFR-003, NFR-004
 - [ ] T093 [S1] Браузерная приёмка UI: `visual-qa` и `ux-route-qa` независимо на 1440×900 и 390×844, скриншоты и консоль; найденное — в `docs/backlog.md`. (`AGENTS.md` → UI)
 - [ ] T094 [S2] Проверка безопасности и устойчивости: `chaos-qa` на вредных входах (NFR-011), маскирование секретов (NFR-012), удаление по сроку (NFR-013), сбой агента (NFR-005). — NFR-005, NFR-011, NFR-012, NFR-013
-- [ ] T095 [S1] Выкатка: `scripts/deploy.sh`, `scripts/rollback.sh`, разделы в `docs/guides/OPERATIONS_GUIDE.md`, проверка после деплоя (health + смоук), VPS за TLS. — устав I-10
+- [x] T095 [S1] Выкатка: `scripts/deploy.sh`, `scripts/rollback.sh`, разделы в `docs/guides/OPERATIONS_GUIDE.md`, проверка после деплоя (health + смоук), VPS за TLS. — устав I-10
 - [ ] T096 [S1] Демо: данные и сценарий на 5 минут из `docs/design-doc.md` §12, прогон-репетиция, `docs/demo.md`. — SC-1, SC-2, SC-3, SC-6
 - [x] T097 [S3] Сверка с уставом и трассировка: `bash scripts/plan-lint.sh specs/001-ai-judge-platform`, `docs/constitution-check.md`, ручной проход по FR/NFR. — устав I-16
