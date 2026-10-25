@@ -21,3 +21,8 @@ report.xml
 
 # сырой лог телеметрии агентов (промпты, пути машины) — только локально; см. docs/telemetry.md
 .harness/
+
+# окружение Python и кэши инструментов
+.venv/
+.ruff_cache/
+.pytest_cache/
