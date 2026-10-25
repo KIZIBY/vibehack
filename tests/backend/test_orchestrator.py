@@ -185,6 +185,8 @@ def scripted(env: Env, *, value: float = 7, ux=..., delay: float = 0.0, write_de
 
         async def run_role(self, run):
             key = (run.submission_id, run.role)
+            if run.submission_id is None:
+                self.calls.append(run)                          # super().run_role для метрик UX не вызывается
             self.log.append(("start", run.role, run.submission_id, run.attempt))
             self.inflight[run.submission_id] += 1
             self.max_subs = max(self.max_subs, sum(1 for s, n in self.inflight.items() if n and s is not None))

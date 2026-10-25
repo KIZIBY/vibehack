@@ -300,8 +300,10 @@ def test_list_runs_newest_first(env):
     assert listing.status_code == 200
     items = listing.json()["items"]
     assert [item["id"] for item in items] == [second["id"], first["id"]]
-    jsonschema.validate(listing.json(), {"type": "object", "required": ["items"], "properties": {
-        "items": {"type": "array", "items": schema_of("Run")}}}, format_checker=jsonschema.FormatChecker())
+    jsonschema.validate(listing.json(), {
+        "type": "object", "required": ["items"], "components": schema_of("Run")["components"],
+        "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/Run"}}}},
+        format_checker=jsonschema.FormatChecker())
 
 
 def test_runs_of_other_project_are_not_listed_and_get_unknown_run_is_404(env):
