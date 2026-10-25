@@ -33,8 +33,8 @@ class HermesDeployConfigTest(unittest.TestCase):
         compose_path = HERMES_DIR / "docker-compose.yml"
         self.assertTrue(compose_path.exists())
         content = compose_path.read_text(encoding="utf-8")
-        self.assertIn("${JUDGE_DATA_DIR}:/opt/data/workspaces", content,
-                      "docker-compose.yml must mount ${JUDGE_DATA_DIR} as /opt/data/workspaces")
+        self.assertRegex(content, r"\$\{JUDGE_DATA_DIR(:-[^}]*)?\}:/opt/data/workspaces",
+                         "docker-compose.yml must mount ${JUDGE_DATA_DIR} as /opt/data/workspaces")
 
     def test_soul_md_personality(self):
         soul_path = HERMES_DIR / "config" / "SOUL.md"

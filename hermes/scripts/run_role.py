@@ -125,7 +125,7 @@ def main():
             if status == "completed":
                 rel_report_path = f"runs/{run_id}/reports/{role}.json"
                 full_report_path = os.path.join(data_root, "runs", run_id, "reports", f"{role}.json")
-                print(f"Run completed successfully.")
+                print("Run completed successfully.")
                 print(f"Report: {rel_report_path}")
                 if os.path.exists(full_report_path):
                     print(f"Full report path: {full_report_path}")
