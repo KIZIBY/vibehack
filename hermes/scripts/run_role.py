@@ -80,7 +80,7 @@ def main():
 
     headers = {
         "Content-Type": "application/json",
-        "Idempotency-Key": f"{run_id}:{role}:1",
+        "Idempotency-Key": f"{session_id}:1",
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

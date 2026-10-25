@@ -357,7 +357,7 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 
 - **Тип:** contract
 - **Приоритет:** P1
-- **Статус:** open
+- **Статус:** open (контракт и backend влиты в 8038ca8; осталась строка про design:project и кросс-тест)
 - **Спека:** `specs/001-ai-judge-platform/` (contracts/agent-run.md §1–§3, T060, T061)
 - **Создано:** 2026-10-25 · agents (ревью code-reviewer, T-единый-разбор-session_id; формат подтвердил владелец)
 
