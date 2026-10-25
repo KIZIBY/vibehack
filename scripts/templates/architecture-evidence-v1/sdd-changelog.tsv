@@ -1,0 +1,3 @@
+stage	revision	change	reason
+stage-1	draft-1	initial architecture boundary and candidates recorded	create falsifiable design authority before implementation
+stage-2	draft-2	independent review findings incorporated	close every blocking architecture finding before bind

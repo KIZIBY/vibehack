@@ -1,0 +1,10 @@
+requirement	decision	test_intent	acceptance
+FR-003	AD-001	T-ARCH-001	dossier has typed candidates constraints fitness and consequences
+FR-004	AD-001	T-ARCH-002	hard-invalid dominated and unresolved selections are rejected
+FR-005	AD-001	T-DESIGN-001	review receipt binds the exact candidate and review bytes
+FR-006	AD-001	T-SDD-001	design trace and SDD changelog remain separate from delivery evidence
+FR-009	AD-001	T-RECEIPT-001	canonical role actor generation subject artifact and digest are checked
+FR-014	AD-001	T-ROOT-001	domain-separated manifest is byte-deterministic
+NFR-001	AD-001	T-PORTABLE-001	verifier needs only Perl
+NFR-002	AD-001	T-DETERMINISM-001	repeated candidate computation returns identical SHA-256
+NFR-003	AD-001	T-SAFETY-001	symlink hardlink mode traversal and size violations fail closed

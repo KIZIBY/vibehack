@@ -1,0 +1,2 @@
+requirement	decision	test	path
+{{REQUIREMENT}}	{{DECISION}}	{{TEST_ID}}	{{REPO_RELATIVE_IMPLEMENTATION_PATH}}

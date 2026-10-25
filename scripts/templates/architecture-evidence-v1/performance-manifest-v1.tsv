@@ -1,0 +1,6 @@
+schema	performance-manifest-v1
+W	{{WORKLOAD_ID}}	{{REQUIREMENT_ID}}	{{TEST_ID}}	{{comparative_OR_new-component}}	{{ODD_REPETITIONS_3_TO_21}}	{{VARIANCE_BUDGET_BPS}}	{{ABSOLUTE_BUDGET_US}}	{{REGRESSION_BUDGET_BPS_OR_DASH}}	wall-clock	us	trusted-host-process-v1
+C	{{WORKLOAD_ID}}	{{IMPLEMENTATION_MAP_PATH}}	{{product-runtime_OR_verification-runtime_OR_control-plane-runtime}}
+A	{{WORKLOAD_ID}}	0	{{ARGV_0_BYTE_SIZE}}	{{ARGV_0_LOWERCASE_HEX}}
+D	{{WORKLOAD_ID}}	{{DATASET_PATH}}	{{100644_OR_100755}}	{{DATASET_BYTE_SIZE}}	{{DATASET_SHA256_64HEX}}
+N	{{IMPLEMENTATION_MAP_PATH_NOT_MEASURED}}	{{non-executed-content_OR_test-support-only_OR_delivery-evidence-only_OR_outside-declared-performance-objective}}

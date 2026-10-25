@@ -1,0 +1,43 @@
+# tests/harness/tiers.tsv — манифест уровней self-test сьюта харнесса. Единая точка правки состава.
+# Колонки (разделитель — пробел или tab):
+#   <case-file>            имя файла в tests/harness/cases/
+#   <tier>                 fast = dev-гейт (быстрый, его гоняет scripts/check.sh); full = полный (включает fast)
+#   <min-asserts-floor>    минимум ok+FAIL в файле; ниже → orchestrator рушит гейт
+#                          (страж «ассерты тихо пропали»; равен текущему числу ассертов кейса,
+#                          для syntax — нижняя граница: число зависит от набора файлов)
+#   [case-hard-cap]        опционально: жёсткий пер-case потолок, сек. «-»/пусто →
+#                          default RT_CASE_HARD_CAP=300; 0 → выкл. Превышение →
+#                          `FAIL  case-timeout…` в секции кейса + красный гейт.
+#
+# ПОРЯДОК full-секции = планировка батчей (RT_PARALLEL=4, батч ждёт целиком): тяжёлые кейсы
+# (pipeline-state, intake, preflight, publish-*) разнесены по разным батчам.
+#
+# case-file                tier   min-asserts  cap
+syntax.sh                  fast   50
+secret-patterns.sh         fast   19
+spec-plan-lint.sh          fast   9
+install-hooks.sh           fast   8
+runtime-adapter.sh         fast   16
+telemetry.sh               fast   97
+ship-guard.sh               fast   12
+review-cross.sh             fast   47
+ship-worktree.sh           fast   38
+context-budget.sh          fast   38
+issue-token-lifecycle.sh   fast   27
+changelog-v1.sh            fast   10
+ci-report.sh               fast   13
+memory-check.sh            fast   17
+state-recover.sh           fast   11
+check-entrypoint.sh        fast   16
+pipeline-state.sh          full   31           600
+intake.sh                  full   44           600
+publish-main.sh            full   25
+preflight.sh               full   43           180
+publish-pr.sh              full   31
+localize-gitdir.sh         full   16
+receipts.sh                full   21
+coordination-lease.sh      full   17
+dora-ops-log.sh            full   21
+dashboards-smoke.sh        full   8            180
+eval-runner.sh             full   16           180
+evidence-verifiers.sh      full   13
