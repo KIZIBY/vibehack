@@ -50,7 +50,7 @@ DATA_TABLES = [
 ALL_TABLES = set(DATA_TABLES) | {"alembic_version"}
 
 JOURNAL_COLUMNS = [
-    "ts", "project_id", "run_id", "submission_id", "role", "session_id", "seq", "event", "tool",
+    "schema_version", "ts", "project_id", "run_id", "submission_id", "role", "session_id", "seq", "event", "tool",
     "args_summary", "result_summary", "refs", "duration_ms", "model", "provider", "tokens_in",
     "tokens_out", "cost_usd", "actor", "source",
 ]
@@ -92,7 +92,7 @@ NOT_NULL = {
     "project": ["name", "type", "status", "version", "created_at", "updated_at"],
     "run_task": ["run_id", "role", "state"],
     "criterion_score": ["run_task_id", "submission_id", "criterion_id", "status", "version", "created_at"],
-    "journal_event": ["ts", "project_id", "run_id", "seq", "event", "source"],
+    "journal_event": ["schema_version", "ts", "project_id", "run_id", "seq", "event", "source"],
 }
 NULLABLE = {
     "project": ["deleted_at"],
@@ -300,6 +300,17 @@ def test_journal_event_minimal_insert_uses_only_required_fields(tmp_path):
             "INSERT INTO journal_event (ts, project_id, run_id, seq, event, source) "
             "VALUES (:ts, 'P1', 'RUN1', 0, 'run_started', 'backend')"), {"ts": TS})
         assert count(conn, "journal_event") == 1
+
+
+def test_journal_event_schema_version_defaults_to_1(tmp_path):
+    """schema_version (const "1" в journal-event.schema.json) обязателен, но берётся из серверного default."""
+    engine = upgraded(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO journal_event (ts, project_id, run_id, seq, event, source) "
+            "VALUES (:ts, 'P1', 'RUN1', 0, 'run_started', 'backend')"), {"ts": TS})
+        value = conn.execute(sa.text("SELECT schema_version FROM journal_event")).scalar_one()
+    assert str(value) == "1" and isinstance(value, str), f"schema_version = {value!r}, ожидалась строка '1'"
 
 
 # ─────────────────────── 2b. уникальности на данных ───────────────────────
@@ -529,11 +540,15 @@ def test_pg_offline_creates_table(table):
 
 
 @pytest.mark.parametrize("table", ["journal_event", "score_override"])
-@pytest.mark.parametrize("op", ["UPDATE", "DELETE"])
+@pytest.mark.parametrize("op", ["UPDATE", "DELETE", "TRUNCATE"])
 def test_pg_offline_append_only_trigger(table, op):
+    """TRUNCATE не запускает построчные триггеры, поэтому для него нужен отдельный statement-level триггер."""
     stmts = _trigger_statements(pg_sql("up"), table)
+    if op == "TRUNCATE":
+        stmts = [s for s in stmts if re.search(r"\bFOR\s+EACH\s+STATEMENT\b", s, re.I)]
     assert any(re.search(rf"\bBEFORE\b[^;]*\b{op}\b", s, re.I | re.S) for s in stmts), \
-        f"нет CREATE TRIGGER BEFORE {op} ON {table}; найдено: {stmts}"
+        f"нет CREATE TRIGGER BEFORE {op} ON {table}" \
+        f"{' FOR EACH STATEMENT' if op == 'TRUNCATE' else ''}; найдено: {stmts}"
 
 
 def test_pg_offline_raises_append_only_exception():
@@ -543,6 +558,12 @@ def test_pg_offline_raises_append_only_exception():
 def test_pg_offline_partial_unique_index_on_run_task():
     pattern = (r"CREATE\s+UNIQUE\s+INDEX[^;]*\bON\s+\"?run_task\"?[^;]*\bWHERE\b[^;]*'queued'[^;]*'running'")
     assert re.search(pattern, pg_sql("up"), re.I | re.S), "нет частичного уникального индекса run_task"
+
+
+@pytest.mark.parametrize("table", ["journal_event", "score_override"])
+def test_pg_offline_downgrade_drops_truncate_trigger(table):
+    pattern = rf'DROP\s+TRIGGER\s+(?:IF\s+EXISTS\s+)?"?\w*no_truncate"?\s+ON\s+"?{table}"?'
+    assert re.search(pattern, pg_sql("down"), re.I), f"нет DROP TRIGGER *no_truncate ON {table}"
 
 
 def test_pg_offline_downgrade_range_drops_triggers_and_tables():
