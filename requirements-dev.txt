@@ -1,0 +1,5 @@
+pytest>=8
+jsonschema>=4.21
+pyyaml>=6
+openapi-spec-validator>=0.7
+ruff>=0.5

@@ -40,9 +40,10 @@ fi
 #   step "lint";       npm run lint                || exit $?
 #   step "unit-тесты"; bash scripts/test-unit.sh   || exit $?
 #
-PROJECT_CHECKS=0
+PROJECT_CHECKS=1
 # --- начало блока проекта ---
-
+step "lint";       bash scripts/lint.sh           || exit $?
+step "unit-тесты"; bash scripts/test-unit.sh all  || exit $?
 # --- конец блока проекта ---
 if [ "$PROJECT_CHECKS" -eq 0 ]; then
   echo "check: NOTE проверки проекта не настроены — заполни блок «ПРОВЕРКИ ПРОЕКТА» в scripts/check.sh (PROJECT.md §3)"

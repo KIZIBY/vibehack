@@ -1,0 +1,73 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "business",
+  "rubric_version": 1,
+  "scores": [
+    {
+      "criterion_id": "crit-2",
+      "status": "scored",
+      "score": 6.5,
+      "max_score": 10,
+      "justification": "Целевая аудитория (МФЦ и поликлиники) определена, объём рынка оценён с источником; конкуренты названы, но отличия описаны общими словами. Итог — медиана оценок профильных экспертов (7 и 6).",
+      "evidence": [
+        {
+          "kind": "slide",
+          "ref": "deck.pdf#4",
+          "quote": "Рынок электронных очередей: 1,2 млрд ₽ в год"
+        },
+        {
+          "kind": "slide",
+          "ref": "deck.pdf#6"
+        }
+      ],
+      "confidence": 0.7
+    }
+  ],
+  "flags": [],
+  "experts": [
+    {
+      "name": "Эксперт по госуслугам",
+      "domain": "государственные сервисы и МФЦ",
+      "scores": [
+        {
+          "criterion_id": "crit-2",
+          "status": "scored",
+          "score": 7,
+          "max_score": 10,
+          "justification": "Сегмент реален, пилот с МФЦ правдоподобен.",
+          "evidence": [
+            {
+              "kind": "slide",
+              "ref": "deck.pdf#4"
+            }
+          ],
+          "confidence": 0.7
+        }
+      ]
+    },
+    {
+      "name": "Эксперт по healthcare",
+      "domain": "организация работы поликлиник",
+      "scores": [
+        {
+          "criterion_id": "crit-2",
+          "status": "scored",
+          "score": 6,
+          "max_score": 10,
+          "justification": "Для поликлиник нужны интеграции с МИС, в презентации их нет.",
+          "evidence": [
+            {
+              "kind": "slide",
+              "ref": "deck.pdf#7"
+            }
+          ],
+          "confidence": 0.6
+        }
+      ]
+    }
+  ],
+  "summary": "Понятная ниша и гипотеза ценности; финансовая модель и интеграции проработаны слабо."
+}

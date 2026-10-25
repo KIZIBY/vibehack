@@ -1,0 +1,9 @@
+{
+  "schema_version": "1",
+  "ts": "2026-10-24T10:05:42.318Z",
+  "project_id": "proj-hack-2026",
+  "run_id": "run-20261024-001",
+  "seq": 15,
+  "event": "tool_exploded",
+  "source": "hermes.post_tool_call"
+}

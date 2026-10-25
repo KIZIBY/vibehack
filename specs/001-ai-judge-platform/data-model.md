@@ -47,8 +47,10 @@ erDiagram
 `rubric`: `id`, `project_id`, `version` (уникально в проекте), `status` (`draft|confirmed|superseded`),
 `weights_were_missing`, `confirmed_at`, `created_at`. Версия иммутабельна после подтверждения.
 `criterion`: `id`, `rubric_id`, `position`, `name`, `description`, `weight` (>0), `max_score` (>0),
-`agent` (роль или `human`), `anchors` (JSON), `source_ref`. `criterion_id` стабилен между версиями,
-если критерий не менялся по смыслу (backend сопоставляет по имени при сохранении).
+`agent` (роль или `human`), `anchors` (JSON), `source_ref`. `criterion.id` у каждой версии рубрики свой
+(первичный ключ строки); оценки хранят `criterion_id` и `rubric_version` как мягкую ссылку без внешнего
+ключа (оценка остаётся при смене рубрики), существование критерия в версии проверяет service-слой
+(`contracts/agent-run.md` §3). Сопоставление критериев между версиями — по `name` (FR-007).
 
 ### ux_metrics
 `project_id` (PK), `metrics` (JSON), `created_at`. Один раз на проект, дальше только чтение (FR-017).
@@ -76,7 +78,9 @@ erDiagram
 (`queued|running|done|failed|no_data`), `attempt`, `reason`, `hermes_run_id`, `started_at`,
 `finished_at`, `tokens_in`, `tokens_out`, `cost_usd`, `model`, `provider`.
 Уникальный частичный индекс: одна активная задача на `(submission_id, role)` — состояния
-`queued|running` (I-15).
+`queued|running` (I-15). Для project-level задач (`submission_id` NULL: рубрика, метрики UX) индекс не
+действует (NULL в уникальных индексах различны) — один активный запуск на проект гарантирует
+оркестратор (T032).
 
 ### criterion_score
 `id`, `run_task_id`, `submission_id`, `criterion_id`, `rubric_version`, `status` (`scored|no_data`),
@@ -94,7 +98,8 @@ erDiagram
 `related_submission_id`, `related_url`, `created_at`. Флаги не меняют баллы (FR-023).
 
 ### journal_event (append-only)
-Поля `contracts/journal-event.schema.json`. Уникально `(run_id, seq)`. Индексы: `(run_id, seq)` для
+Поля `contracts/journal-event.schema.json`, включая `schema_version` (по умолчанию `'1'`); первичный ключ
+`(run_id, seq)`. На PostgreSQL защищён и от `TRUNCATE` (триггер на оператор). Уникально `(run_id, seq)`. Индексы: `(run_id, seq)` для
 ленты, `(submission_id, seq)` для фильтра.
 
 ### claim
