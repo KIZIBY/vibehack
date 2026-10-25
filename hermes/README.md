@@ -41,20 +41,15 @@ reverse proxy с TLS перед `127.0.0.1:8642` и `API_SERVER_KEY` в `.env`.
 Для Telegram в `~/.hermes/.env` обязательно `TELEGRAM_ALLOWED_USERS` (числовые ID), иначе бот
 открыт всем.
 
-## Разработка обвеса
-
-- **Новый инструмент** — схема в `plugins/ai-judge/schemas.py`, обработчик в `tools.py`
-  (`handler(params, **kwargs) -> str` с JSON), регистрация в `__init__.py`, имя — в `plugin.yaml`
-  `provides_tools`. Логику держите в чистых функциях без импорта Hermes — так её покрывают тесты.
-  Инструменты плагинов Hermes держит за `tool_search` (модель видит их в каталоге и вызывает через
-  мост). Если модель их не находит — `tools.tool_search.enabled: off` в `config/config.yaml`
-  (все инструменты сразу в контексте, дороже по токенам).
+- **Инструменты отчётов** — `report_scores`, `report_flag`, `report_claims`, `report_rubric`,
+  `report_ux_metrics`, `report_inventory_patch` с валидацией по `agent-report.schema.json`.
+- **Защита ролей** — хук `pre_tool_call` в `plugins/ai-judge/guard.py`: отсекает терминал у `code`,
+  разрешает только белые списки инструментов для каждой роли и блокирует запись вне `runs/<run_id>/`.
+- **Сетевая безопасность (Egress)** — исходящие запросы в локальные и приватные подсети
+  (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.169.254/32`) заблокированы
+  в `config/config.yaml` (инвариант I-1, NFR-011).
+- **Общий том данных** — `${JUDGE_DATA_DIR}` монтируется в `/opt/data/workspaces` для обмена описями и отчётами с backend.
 - **Проверка плагина в живом Hermes** — `docker compose exec hermes hermes plugins doctor --ci ai-judge`.
-- **Хуки** — `ctx.register_hook(...)` в `__init__.py`: `pre_tool_call` (может заблокировать вызов),
-  `post_tool_call`, `pre_llm_call`, `post_llm_call`, `on_session_start`, `on_session_end`.
-- **Рубрика и процедура** — `skills/ai-judge/SKILL.md`.
-- **Новый навык или плагин** — новая подпапка + строка тома в `docker-compose.yml`
-  (+ `plugins.enabled` в `config/config.yaml` для плагина).
 - **Тесты** — `python3 -m unittest discover -s hermes/tests` из корня репо.
 
 Слияние `config.yaml` только добавляет: элемент, удалённый из нашего списка, на сервере останется —

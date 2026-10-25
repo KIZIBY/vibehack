@@ -69,3 +69,71 @@ def judge_score(params, **kwargs):
     except ValueError as exc:
         return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
     return json.dumps({"success": True, **result}, ensure_ascii=False)
+
+
+try:
+    from . import reports
+except (ImportError, ValueError):
+    try:
+        import reports
+    except ImportError:
+        import importlib.util
+        from pathlib import Path
+        _reports_path = Path(__file__).resolve().parent / "reports.py"
+        _spec = importlib.util.spec_from_file_location("reports", _reports_path)
+        reports = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(reports)
+
+
+def report_scores(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_scores(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def report_flag(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_flag(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def report_claims(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_claims(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def report_rubric(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_rubric(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def report_ux_metrics(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_ux_metrics(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def report_inventory_patch(params, **kwargs):
+    session_id = kwargs.get("session_id")
+    try:
+        res = reports.save_inventory_patch(params or {}, session_id=session_id)
+        return json.dumps(res, ensure_ascii=False)
+    except (ValueError, TypeError, KeyError) as exc:
+        return json.dumps({"success": False, "error": str(exc)}, ensure_ascii=False)
