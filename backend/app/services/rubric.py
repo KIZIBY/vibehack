@@ -25,7 +25,7 @@ from ..common import new_id, utc_now_iso
 from ..db import session_scope
 from ..repositories.base import VersionConflict, update_versioned
 from .gateway import AgentGateway, RoleRun
-from .reports import SAFE_NAME, clean_text, document_validator, read_json_file
+from .reports import SAFE_NAME, clean_text, document_validator, read_json_file, remove_file
 
 log = logging.getLogger(__name__)
 
@@ -384,11 +384,8 @@ async def _build_draft(session_factory, gateway, data_dir: Path, project_id: str
 
 
 def _forget_stale_draft(data_dir: Path, project_id: str) -> None:
-    """Файл прошлого запуска не должен сойти за результат нового."""
-    try:
-        (data_dir / "projects" / project_id / "rubric-draft.json").unlink(missing_ok=True)
-    except OSError:
-        pass
+    """Файл прошлого запуска не должен сойти за результат нового (ссылки не разыменовываются)."""
+    remove_file(data_dir, "projects", project_id, "rubric-draft.json")
 
 
 def _validated_draft(document: Any, project_id: str) -> tuple[list[dict[str, Any]], bool] | str:

@@ -16,8 +16,10 @@
 """
 from __future__ import annotations
 
+import errno
 import json
 import logging
+import os
 import re
 import stat
 import unicodedata
@@ -94,32 +96,68 @@ def _reject_constant(name: str) -> Any:
     raise ValueError(f"недопустимая константа JSON: {name}")
 
 
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _open_directory_chain(root: Path, parts: tuple[str, ...]) -> int:
+    """Файловый дескриптор каталога ``root/parts``; каждый шаг открывается относительно предыдущего дескриптора
+    с ``O_NOFOLLOW``, поэтому символическая ссылка на любом уровне (в том числе подменённая между проверкой и
+    открытием) даёт ``OSError``, а не выход за пределы ``root``."""
+    fd = os.open(root.resolve(), os.O_RDONLY | _O_DIRECTORY)
+    try:
+        for part in parts:
+            next_fd = os.open(part, os.O_RDONLY | _O_DIRECTORY | _O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
 def read_json_file(root: Path, *parts: str) -> tuple[Any, str | None]:
-    """Читает JSON-файл агента строго внутри ``root``: без символических ссылок, не больше ``MAX_REPORT_BYTES``.
+    """Читает JSON-файл агента строго внутри ``root``: без символических ссылок на любом уровне пути, только
+    обычный файл, не больше ``MAX_REPORT_BYTES``, числа ``NaN``/``Infinity`` недопустимы.
 
     Возвращает ``(значение, None)`` или ``(None, причина)``; причина — короткий код без путей:
     ``missing | unreadable | too_large | invalid_json``."""
-    if not all(SAFE_NAME.match(part) for part in parts):
+    if not parts or not all(SAFE_NAME.match(part) for part in parts):
         return None, "missing"
     try:
-        root_resolved = root.resolve()
-        path = root_resolved.joinpath(*parts)
-        if path.is_symlink() or not path.exists():
-            return None, "missing"
-        resolved = path.resolve(strict=True)
-        resolved.relative_to(root_resolved)
-        if not stat.S_ISREG(resolved.stat().st_mode):
-            return None, "unreadable"
-        with open(resolved, "rb") as handle:
+        dir_fd = _open_directory_chain(root, tuple(parts[:-1]))
+        try:
+            file_fd = os.open(parts[-1], os.O_RDONLY | _O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=dir_fd)
+        finally:
+            os.close(dir_fd)
+        with os.fdopen(file_fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return None, "unreadable"
             raw = handle.read(MAX_REPORT_BYTES + 1)
-    except (OSError, ValueError):
-        return None, "unreadable"
+    except OSError as exc:
+        return None, "missing" if exc.errno in (errno.ENOENT, errno.ENOTDIR) else "unreadable"
     if len(raw) > MAX_REPORT_BYTES:
         return None, "too_large"
     try:
         return json.loads(raw.decode("utf-8"), parse_constant=_reject_constant), None
     except (ValueError, RecursionError):
         return None, "invalid_json"
+
+
+def remove_file(root: Path, *parts: str) -> None:
+    """Удаляет файл внутри ``root``, не следуя символическим ссылкам; отсутствие или отказ — не ошибка."""
+    if not parts or not all(SAFE_NAME.match(part) for part in parts):
+        return
+    try:
+        dir_fd = _open_directory_chain(root, tuple(parts[:-1]))
+    except OSError:
+        return
+    try:
+        os.unlink(parts[-1], dir_fd=dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
 
 
 # ─────────────────────────────── приём отчёта ───────────────────────────────
@@ -136,6 +174,8 @@ _FAILURE_NOTES = {
 def ingest_report(session: Session, *, data_dir: str | Path, project_id: str, run_task: Mapping[str, Any]) -> dict:
     """Принимает отчёт роли по задаче ``run_task`` (``id, run_id, submission_id, role, rubric_version``)."""
     task = _check_task(session, project_id, run_task)
+    # Блокировка строки задачи: параллельный приём той же задачи дождётся коммита первого и увидит его записи
+    session.execute(text("UPDATE run_task SET state = state WHERE id = :id"), {"id": task["id"]})
     previous = _previous_summary(session, task["id"])
     if previous is not None:
         return previous
@@ -182,21 +222,29 @@ def ingest_report(session: Session, *, data_dir: str | Path, project_id: str, ru
 
 
 def _check_task(session: Session, project_id: str, run_task: Mapping[str, Any]) -> dict[str, Any]:
+    """Проверяет форму ``run_task`` и возвращает задачу по строкам БД: ``run_id``, ``submission_id``, ``role`` и
+    версия рубрики берутся из ``run_task`` / ``run``, а не из переданного словаря (источник истины — БД)."""
     try:
-        task = {key: run_task[key] for key in ("id", "run_id", "submission_id", "role", "rubric_version")}
+        passed = {key: run_task[key] for key in ("id", "run_id", "submission_id", "role", "rubric_version")}
     except KeyError as exc:
         raise ValueError(f"в run_task нет поля {exc.args[0]}") from None
-    if not isinstance(task["id"], str) or not task["id"]:
+    if not isinstance(passed["id"], str) or not passed["id"]:
         raise ValueError("run_task.id должен быть непустой строкой")
+    if not isinstance(passed["submission_id"], str) or not passed["submission_id"]:
+        raise ValueError("приём оценок возможен только для задачи с submission_id")
+    if isinstance(passed["rubric_version"], bool) or not isinstance(passed["rubric_version"], int):
+        raise ValueError("run_task.rubric_version должен быть целым")
+    row = session.execute(
+        text("SELECT t.id, t.run_id, t.submission_id, t.role, r.rubric_version FROM run_task t "
+             "JOIN run r ON r.id = t.run_id WHERE t.id = :id AND r.project_id = :project"),
+        {"id": passed["id"], "project": project_id}).mappings().first()
+    if row is None:
+        raise LookupError("задача не найдена в этом проекте")
+    task = dict(row)
     if not isinstance(task["submission_id"], str) or not task["submission_id"]:
         raise ValueError("приём оценок возможен только для задачи с submission_id")
-    if isinstance(task["rubric_version"], bool) or not isinstance(task["rubric_version"], int):
-        raise ValueError("run_task.rubric_version должен быть целым")
-    found = session.execute(
-        text("SELECT 1 FROM run_task t JOIN run r ON r.id = t.run_id WHERE t.id = :id AND r.project_id = :project"),
-        {"id": task["id"], "project": project_id}).first()
-    if found is None:
-        raise LookupError("задача не найдена в этом проекте")
+    if any(passed[key] != task[key] for key in ("submission_id", "role", "rubric_version")):
+        log.warning("run_task не совпадает с записью в БД; используются данные БД", extra={"run_task_id": task["id"]})
     return task
 
 
