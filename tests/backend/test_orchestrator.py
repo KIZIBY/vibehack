@@ -624,6 +624,30 @@ def test_restart_one_submission_and_role_keeps_old_scores(env):
     assert requested["submission_ids"] == [S1] and requested["roles"] == ["code"]
 
 
+def test_restart_by_criterion_does_not_touch_other_criteria_of_the_role(env):
+    """Находка ревью (P0, данные): перезапуск по критерию пишет оценки только выбранных критериев роли; остальные
+    критерии роли не получают новых строк (в том числе ``no_data``), иначе новая запись затёрла бы старую оценку."""
+    env.sql("INSERT INTO criterion (id, rubric_id, position, name, description, weight, max_score, agent) "
+            "VALUES ('C_CODE2', 'RUBRIC_1', 9, 'Второй критерий кода', '', 1, 10, 'code')")
+    both = scores_template("code", 7)
+    both["scores"].append(dict(both["scores"][0], criterion_id="C_CODE2", score=5))
+    first = env.create(roles=["code"])
+    gateway = scripted(env)
+    gateway._reports["code"] = both
+    env.execute(first["id"], gateway)
+    assert [r["score"] for r in env.scores(S1)["C_CODE2"]] == [5]
+
+    second = env.create(roles=["code"], criterion_ids=["C_CODE"])
+    only = scripted(env, value=9)                               # агент отвечает только по выбранному критерию
+    env.execute(second["id"], only)
+
+    assert [r["score"] for r in env.scores(S1)["C_CODE"]] == [7, 9]
+    assert [r["score"] for r in env.scores(S1)["C_CODE2"]] == [5]          # ни новой оценки, ни no_data
+    assert all(t["state"] == "done" for t in env.tasks(second["id"]))
+    instructions = only.calls[0].instructions
+    assert "C_CODE:" in instructions and "C_CODE2" not in instructions     # агенту перечислены только выбранные
+
+
 # ─────────────────────────────── завершение процесса ───────────────────────────────
 
 def test_recover_interrupted_fails_running_and_queued_work(env):
