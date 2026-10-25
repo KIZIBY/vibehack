@@ -3,6 +3,8 @@ import sys
 import json
 import unittest
 import subprocess
+import shutil
+import tempfile
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -125,7 +127,11 @@ class TestRunRoleContract(unittest.TestCase):
     def test_run_role_successful_execution(self):
         """Successful run role execution polls status, writes/checks report, prints path."""
         run_id = "test-run-smoke-1"
-        data_dir = REPO_ROOT / "tests" / "fixtures" / "workspaces"
+        fixture_dir = REPO_ROOT / "tests" / "fixtures" / "workspaces"
+        tmp = tempfile.mkdtemp(prefix="run_role_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        data_dir = Path(tmp) / "workspaces"
+        shutil.copytree(fixture_dir, data_dir)
         report_dir = data_dir / "runs" / run_id / "reports"
         report_dir.mkdir(parents=True, exist_ok=True)
         report_file = report_dir / "code.json"
@@ -183,7 +189,11 @@ class TestRunRoleContract(unittest.TestCase):
     def test_run_role_failed_status(self):
         """When Hermes returns terminal status failed, exit with non-zero."""
         run_id = "test-run-fail-1"
-        data_dir = REPO_ROOT / "tests" / "fixtures" / "workspaces"
+        fixture_dir = REPO_ROOT / "tests" / "fixtures" / "workspaces"
+        tmp = tempfile.mkdtemp(prefix="run_role_")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        data_dir = Path(tmp) / "workspaces"
+        shutil.copytree(fixture_dir, data_dir)
 
         env = os.environ.copy()
         env["HERMES_API_URL"] = f"http://127.0.0.1:{self.port}"
