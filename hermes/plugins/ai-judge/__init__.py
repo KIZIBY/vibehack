@@ -2,16 +2,9 @@
 import json
 import logging
 
-from . import guard, schemas, tools
+from . import guard, journal, schemas, tools
 
 log = logging.getLogger(__name__)
-
-
-def _log_verdict(tool_name=None, args=None, result=None, **kwargs):
-    """post_tool_call: каждую выставленную оценку — в лог шлюза (след для разбора спорных вердиктов)."""
-    del kwargs
-    if tool_name == schemas.JUDGE_SCORE["name"]:
-        log.info("ai-judge verdict: args=%s result=%s", json.dumps(args, ensure_ascii=False, default=str), result)
 
 
 def register(ctx):
@@ -62,4 +55,5 @@ def register(ctx):
 
     # Хуки
     ctx.register_hook("pre_tool_call", guard.pre_tool_call_guard)
-    ctx.register_hook("post_tool_call", _log_verdict)
+    ctx.register_hook("post_tool_call", journal.post_tool_call)
+    ctx.register_hook("post_llm_call", journal.post_llm_call)
