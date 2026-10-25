@@ -6,6 +6,11 @@
 node_modules/
 .env
 
+# каталог материалов платформы (JUDGE_DATA_DIR по умолчанию) и локальная SQLite-база
+/data/
+/hermes/data/
+/judge.db
+
 # генерируемые артефакты харнесса
 docs/pipeline-dashboard.html
 docs/telemetry-dashboard.html
