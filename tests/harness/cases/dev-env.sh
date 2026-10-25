@@ -102,7 +102,7 @@ t "dev.sh без fake_gateway.py: строка о пропуске ровно о
 t "dev.sh без fake_gateway.py: uvicorn запущен" 0 loggrep 'py -m uvicorn app\.main:app'
 t "dev.sh без fake_gateway.py: fake-шлюз не запускался" 0 lognot 'fake_gateway'
 t "dev.sh без .env: ./data создан" 0 test -d "$D1/data"
-t "dev.sh: JUDGE_DATA_DIR по умолчанию виден процессам (./data)" 0 loggrep 'datadir=(\./data|'"$D1"'/data)$'
+t "dev.sh: JUDGE_DATA_DIR по умолчанию — абсолютный <корень>/data, виден процессам" 0 loggrep 'datadir=('"$(cd "$D1" && pwd)"'/data)$'
 
 # 4b. с fake_gateway.py: запускается python -m app.fake_gateway из backend/
 D2="$TMP/d2"; mkdev "$D2" gateway
@@ -111,6 +111,10 @@ t "dev.sh с fake_gateway.py: запущен python -m app.fake_gateway" 0 loggr
 t "dev.sh с fake_gateway.py: cwd = backend/" 0 loggrep '^py -m app\.fake_gateway cwd=.*/d2/backend '
 t "dev.sh с fake_gateway.py: uvicorn тоже запущен" 0 loggrep 'py -m uvicorn app\.main:app'
 t "dev.sh с fake_gateway.py: строки о пропуске нет" 1 grep -q 'fake-шлюз не запущен' "$TMP/last.out"
+t "dev.sh: fake-шлюз (cwd backend/) получает АБСОЛЮТНЫЙ JUDGE_DATA_DIR — тот же каталог, что backend" 0 \
+  loggrep '^py -m app\.fake_gateway .*datadir='"$(cd "$D2" && pwd)"'/data$'
+t "hermes/deploy.sh экспортирует JUDGE_DATA_DIR (compose считает ./data от hermes/, не от корня)" 0 \
+  grep -qE '^export JUDGE_DATA_DIR' "$ROOT/hermes/deploy.sh"
 # порядок в тексте скрипта: fake-шлюз ПОСЛЕ uvicorn (и после frontend)
 DEVSH="$ROOT/scripts/dev.sh"
 line_of() { grep -n "$1" "$DEVSH" | head -n 1 | cut -d: -f1; }
@@ -125,7 +129,7 @@ t "dev.sh с .env → exit 0" 0 rundev "$D3" bash scripts/dev.sh
 t "dev.sh: переменная из .env видна процессу backend" 0 loggrep '^py -m uvicorn .*probe=from-dotenv'
 t "dev.sh: переменная из .env видна fake-шлюзу" 0 loggrep '^py -m app\.fake_gateway .*probe=from-dotenv'
 t "dev.sh: каталог из JUDGE_DATA_DIR (.env) создан" 0 test -d "$TMP/custom data"
-t "dev.sh: JUDGE_DATA_DIR из .env передан процессам" 0 loggrep 'datadir='"$TMP"'/custom data$'
+t "dev.sh: JUDGE_DATA_DIR из .env передан процессам" 0 loggrep 'datadir='"$(cd "$TMP/custom data" && pwd)"'$'
 t "dev.sh: при JUDGE_DATA_DIR из .env ./data не создаётся" 0 test ! -e "$D3/data"
 
 # 4d. переменная окружения вызывающего тоже работает (без .env) и каталог создаётся рекурсивно

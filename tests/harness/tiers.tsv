@@ -31,6 +31,7 @@ state-recover.sh           fast   11
 check-entrypoint.sh        fast   18
 project-scripts.sh         fast   130
 dev-env.sh                 fast   83
+dev-env.sh                 fast   85
 pipeline-state.sh          full   31           600
 intake.sh                  full   44           600
 publish-main.sh            full   25
