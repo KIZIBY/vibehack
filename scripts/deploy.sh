@@ -26,6 +26,14 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-venv nginx certbot python3-certbot-nginx curl rsync nodejs npm
 command -v npm >/dev/null || die "не удалось установить Node.js/npm"
 
+CERTBOT_CMD="$(command -v certbot)"
+if ! "$CERTBOT_CMD" help all 2>&1 | grep -q -- '--ip-address'; then
+  CERTBOT_VENV="$BASE/certbot-venv"
+  python3 -m venv "$CERTBOT_VENV"
+  "$CERTBOT_VENV/bin/python" -m pip install --quiet --upgrade pip certbot certbot-nginx
+  CERTBOT_CMD="$CERTBOT_VENV/bin/certbot"
+fi
+
 install -d -m 0750 "$BASE/releases" "$STATE/data" "$(dirname "$ENV_FILE")" /etc/systemd/system
 install -d -m 0700 "$STATE"
 
@@ -88,7 +96,7 @@ nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-certbot certonly --webroot -w /var/www/$APP --ip-address "$HOST" \
+"$CERTBOT_CMD" certonly --webroot -w /var/www/$APP --ip-address "$HOST" \
   --preferred-profile shortlived --email "$TLS_EMAIL" \
   --agree-tos --non-interactive --keep-until-expiring
 
