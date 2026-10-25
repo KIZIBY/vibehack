@@ -34,3 +34,4 @@ DORA-события: `deploy:start|done|failed` · `publish:done|failed` · `inc
 
 | ts (UTC) | event | detail |
 |---|---|---|
+| 2026-10-25T12:04:41Z | publish:pr | branch=ship/agents commits=16 zone=C |
