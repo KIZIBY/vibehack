@@ -13,7 +13,7 @@
   шлюз ``app.state.gateway`` не настроен -> 503; построение идёт в фоне со своей сессией;
 - ``build_draft(session_factory, gateway, data_dir, project_id) -> dict | str``: роль ``rubric``; документ
   ``kind=rubric_draft`` читается из ``projects/<id>/rubric-draft.json`` (запасной путь — отчёт шлюза
-  ``runs/<run_id>/reports/rubric.json``, куда пишет ``FakeAgentGateway``), проверяется по
+  ``runs/<run_id>/reports/rubric__project.json``, куда пишет ``FakeAgentGateway``; scope = ``project``), проверяется по
   ``agent-report.schema.json``; при сбое версия не создаётся, возвращается причина строкой, в журнал — ERROR;
 - ``require_confirmed_rubric(session, project_id) -> int`` / ``RubricNotConfirmed`` (запуск оценки без
   подтверждённой рубрики невозможен); ``changed_criteria(session, project_id, old, new) -> set[str]``.
@@ -660,6 +660,26 @@ def test_build_draft_reads_gateway_report_with_fake_gateway(env):
     gateway = FakeAgentGateway(env.data_dir, {"rubric": draft_doc(weights_were_missing=False)})
     result = run_build(env, gateway)
     assert isinstance(result, dict) and result["weights_were_missing"] is False
+    assert env.versions() == [1]
+
+
+def test_build_draft_fallback_path_is_project_scoped_report_and_old_path_is_ignored(env):
+    from app.services.gateway import FakeAgentGateway, RoleResult
+
+    class Scoped(FakeAgentGateway):
+        def __init__(self, name):
+            super().__init__(env.data_dir)
+            self.name = name
+
+        async def run_role(self, run):
+            target = env.data_dir / "runs" / run.run_id / "reports"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / self.name).write_text(json.dumps(draft_doc()), encoding="utf-8")
+            return RoleResult(status="completed", hermes_run_id="x")
+
+    result = run_build(env, Scoped("rubric__project.json"))
+    assert isinstance(result, dict) and result["status"] == "draft"
+    assert isinstance(run_build(env, Scoped("rubric.json")), str)   # старый путь без scope больше не читается
     assert env.versions() == [1]
 
 

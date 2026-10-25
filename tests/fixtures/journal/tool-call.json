@@ -5,7 +5,7 @@
   "run_id": "run-20261024-001",
   "submission_id": "sub-team-alpha",
   "role": "code",
-  "session_id": "run-20261024-001:code",
+  "session_id": "run-20261024-001:code:sub-team-alpha",
   "seq": 14,
   "event": "tool_call",
   "tool": "read_file",

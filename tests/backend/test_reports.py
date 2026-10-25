@@ -2,7 +2,7 @@
 
 Контракт (задача T028, contracts/agent-run.md §3, agent-report.schema.json):
 ``ingest_report(session, *, data_dir, project_id, run_task) -> dict``, ``run_task`` = ``{id, run_id, submission_id,
-role, rubric_version}``. Читает ``<data_dir>/runs/<run_id>/reports/<role>.json``, ПОВТОРНО проверяет документ схемой и
+role, rubric_version}``. Читает ``<data_dir>/runs/<run_id>/reports/<role>__<submission_id>.json`` (scope = работа; agent-run.md §1), ПОВТОРНО проверяет документ схемой и
 правилами и пишет ``criterion_score`` / ``flag`` / ``claim`` (commit — дело вызывающего).
 
 - документ ``kind=scores``; его ``run_id``, ``role``, ``submission_id``, ``rubric_version`` совпадают с задачей;
@@ -107,13 +107,13 @@ class Env:
                      "VALUES (:id, 'RUBRIC_1', :pos, :id, '', 1, :max, :agent)",
                      id=cid, pos=position, max=max_score, agent=agent)
 
-    def task(self, role: str = "code", **over) -> dict:
+    def task(self, role: str = "code", sub: str = SUB, **over) -> dict:
         """Создаёт строку run_task и возвращает словарь, который оркестратор передаёт в ingest_report."""
         self._task_counter += 1
         task_id = f"TASK{self._task_counter:022d}"
         self.sql("INSERT INTO run_task (id, run_id, submission_id, role, state, attempt) "
-                 "VALUES (:id, :run, :sub, :role, 'done', 1)", id=task_id, run=RUN, sub=SUB, role=role)
-        task = {"id": task_id, "run_id": RUN, "submission_id": SUB, "role": role, "rubric_version": RUBRIC_V}
+                 "VALUES (:id, :run, :sub, :role, 'done', 1)", id=task_id, run=RUN, sub=sub, role=role)
+        task = {"id": task_id, "run_id": RUN, "submission_id": sub, "role": role, "rubric_version": RUBRIC_V}
         task.update(over)
         return task
 
@@ -193,7 +193,7 @@ def doc(task: dict, scores=None, flags=None, claims=None, **over) -> dict:
 
 
 def write_report(env: Env, task: dict, document, *, name: str | None = None) -> Path:
-    target = env.data_dir / "runs" / task["run_id"] / "reports" / f"{name or task['role']}.json"
+    target = env.data_dir / "runs" / task["run_id"] / "reports" / (name or f"{task['role']}__{task['submission_id']}.json")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(document if isinstance(document, str) else json.dumps(document), encoding="utf-8")
     return target
@@ -447,7 +447,7 @@ def test_report_outside_reports_dir_is_not_read_for_hostile_run_id(env):
     task = env.task("code", run_id="../outside")
     outside = env.data_dir / "outside" / "reports"
     outside.mkdir(parents=True)
-    (outside / "code.json").write_text(json.dumps(doc(task, [score("C_CODE_A", 5)])), encoding="utf-8")
+    (outside / f"code__{SUB}.json").write_text(json.dumps(doc(task, [score("C_CODE_A", 5)])), encoding="utf-8")
     result = env.ingest(task)
     assert result["accepted"] == 0 and result["flags"] == 1
 
@@ -456,7 +456,7 @@ def test_symlinked_report_is_not_followed(env):
     task = env.task("code")
     secret = env.tmp / "elsewhere.json"
     secret.write_text(json.dumps(doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 5)])), encoding="utf-8")
-    target = env.data_dir / "runs" / task["run_id"] / "reports" / "code.json"
+    target = env.data_dir / "runs" / task["run_id"] / "reports" / f"code__{SUB}.json"
     target.parent.mkdir(parents=True)
     target.symlink_to(secret)
     assert_agent_failure(env, task, env.ingest(task), ("C_CODE_A", "C_CODE_B"))
@@ -659,3 +659,79 @@ def test_document_is_not_mutated_by_ingest_inputs(env):
     write_report(env, task, doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)]))
     env.ingest(task)
     assert task == original
+
+
+# ─────────────────────────────── scope отчёта: путь = роль + работа ───────────────────────────────
+
+SUB2 = "SUBM0000000000000000000003"
+
+
+def add_second_submission(env: Env) -> None:
+    env.sql("INSERT INTO submission (id, project_id, team_name, intake_status, version, created_at) "
+            "VALUES (:id, :p, :id, 'ready', 1, :ts)", id=SUB2, p=PID, ts=TS)
+
+
+def test_report_path_is_role_and_submission_scoped(env):
+    task = env.task("code")
+    path = write_report(env, task, doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)]))
+    assert path.name == f"code__{SUB}.json"
+    result = env.ingest(task)
+    assert result["accepted"] == 2 and result["flags"] == 0
+
+
+def test_old_role_only_report_path_is_not_read(env):
+    task = env.task("code")
+    write_report(env, task, doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)]), name="code.json")
+    assert_agent_failure(env, task, env.ingest(task), ("C_CODE_A", "C_CODE_B"))
+
+
+def test_same_role_reports_of_two_submissions_are_ingested_each_to_its_own_submission(env):
+    add_second_submission(env)
+    first, second = env.task("code"), env.task("code", sub=SUB2)
+    write_report(env, first, doc(first, [score("C_CODE_A", 2), score("C_CODE_B", 1)]))
+    write_report(env, second, doc(second, [score("C_CODE_A", 9), score("C_CODE_B", 4)]))
+
+    import threading
+
+    errors: list[Exception] = []
+
+    def worker(task):
+        try:
+            env.ingest(task)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in (first, second)]   # без очередности приёма
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+
+    assert not errors, errors
+    got_first, got_second = env.scores(first), env.scores(second)
+    assert [got_first[c]["score"] for c in ("C_CODE_A", "C_CODE_B")] == [2, 1]
+    assert [got_second[c]["score"] for c in ("C_CODE_A", "C_CODE_B")] == [9, 4]
+    assert {r["submission_id"] for r in got_first.values()} == {SUB}
+    assert {r["submission_id"] for r in got_second.values()} == {SUB2}
+    assert env.flags(first) == [] and env.flags(second) == []
+
+
+def test_report_of_another_submission_at_this_scope_path_is_rejected(env):
+    add_second_submission(env)
+    task, other = env.task("code"), env.task("code", sub=SUB2)
+    foreign = doc(other, [score("C_CODE_A", 9), score("C_CODE_B", 4)])      # документ работы SUB2 ...
+    write_report(env, task, foreign)                                          # ... лежит по пути работы SUB
+    result = env.ingest(task)
+    assert_agent_failure(env, task, result, ("C_CODE_A", "C_CODE_B"))
+    assert env.rows("SELECT count(*) AS n FROM criterion_score WHERE submission_id = :s", s=SUB2)[0]["n"] == 0
+    assert "submission_id" in env.flags(task)[0]["note"]
+    evidence = env.flags(task)[0]["evidence"]
+    evidence = json.loads(evidence) if isinstance(evidence, str) else evidence
+    assert evidence == [{"kind": "file", "ref": f"reports/code__{SUB}.json"}]
+
+
+def test_report_of_another_submission_is_not_read_by_path_of_a_third_scope(env):
+    add_second_submission(env)
+    task, other = env.task("code"), env.task("code", sub=SUB2)
+    write_report(env, other, doc(other, [score("C_CODE_A", 9), score("C_CODE_B", 4)]))   # лежит только у SUB2
+    assert_agent_failure(env, task, env.ingest(task), ("C_CODE_A", "C_CODE_B"))

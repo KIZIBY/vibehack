@@ -37,7 +37,7 @@ def test_reports_directory_replaced_by_symlink_inside_data_dir_is_not_followed(e
     task = env.task("code")
     real = env.data_dir / "runs" / "REAL" / "reports"
     real.mkdir(parents=True)
-    (real / "code.json").write_text(json.dumps(doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)])), encoding="utf-8")
+    (real / f"code__{SUB}.json").write_text(json.dumps(doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)])), encoding="utf-8")
     link = env.data_dir / "runs" / task["run_id"] / "reports"
     link.parent.mkdir(parents=True)
     link.symlink_to(real, target_is_directory=True)
@@ -49,7 +49,7 @@ def test_run_directory_replaced_by_symlink_inside_data_dir_is_not_followed(env):
     task = env.task("code")
     real = env.data_dir / "runs" / "REAL"
     (real / "reports").mkdir(parents=True)
-    (real / "reports" / "code.json").write_text(
+    (real / "reports" / f"code__{SUB}.json").write_text(
         json.dumps(doc(task, [score("C_CODE_A", 5), score("C_CODE_B", 3)])), encoding="utf-8")
     (env.data_dir / "runs" / task["run_id"]).symlink_to(real, target_is_directory=True)
     assert_agent_failure(env, task, env.ingest(task), ("C_CODE_A", "C_CODE_B"))

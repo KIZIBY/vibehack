@@ -204,7 +204,7 @@ def scripted(env: Env, *, value: float = 7, ux=..., delay: float = 0.0, write_de
                         return RoleResult(status="completed", hermes_run_id="h-ux")
                     target = env.data_dir / "runs" / run.run_id / "reports"
                     target.mkdir(parents=True, exist_ok=True)
-                    (target / "design.json").write_text(json.dumps(self.ux), encoding="utf-8")
+                    (target / "design__project.json").write_text(json.dumps(self.ux), encoding="utf-8")
                     result = RoleResult(status="completed", hermes_run_id="h-ux")
                 else:
                     result = await super().run_role(run)
@@ -436,25 +436,71 @@ def test_semaphore_limits_parallel_submissions(env):
                 "VALUES (:id, :p, :id, 'ready', 1, :ts)", id=f"SUBM000000000000000000000{i}", p=PID, ts=TS)
     run = env.create(roles=["code", "business"])
     gateway = scripted(env, delay=0.01)
-    env.execute(run["id"], gateway, max_parallel=2, serialize_reports=False)
-    # без очередности приёма отчёты одной роли у разных работ перекрываются (общий путь) — здесь важен только
-    # параллелизм, поэтому итог прогона не проверяется: он обязан лишь завершиться
-    assert env.run(run["id"])["status"] in ("completed", "partial", "failed")
+    env.execute(run["id"], gateway, max_parallel=2)
+    assert env.run(run["id"])["status"] == "completed"
     assert 1 <= gateway.max_subs <= 2
     run2 = env.create(roles=["code", "business"])
     gateway2 = scripted(env, delay=0.01)
-    env.execute(run2["id"], gateway2, max_parallel=6, serialize_reports=False)
+    env.execute(run2["id"], gateway2, max_parallel=6)
     assert gateway2.max_subs >= 3
 
 
 def test_same_role_reports_of_parallel_submissions_do_not_clash(env):
-    """Отчёт роли лежит в ``runs/<run_id>/reports/<role>.json`` — общий для всех работ прогона: запись и приём
-    одной роли у разных работ не должны перекрываться, иначе приём прочитает чужой отчёт."""
+    """Отчёт роли лежит в ``runs/<run_id>/reports/<role>__<scope>.json`` — свой файл у каждой работы: запись и приём
+    одной роли у разных работ могут идти одновременно и не читают чужой отчёт."""
     run = env.create(roles=["code"])
     env.execute(run["id"], scripted(env, write_delay=0.02))
     for sub in (S1, S2):
         assert env.scores(sub)["C_CODE"][-1]["status"] == "scored"
     assert env.rows("SELECT * FROM flag") == []
+
+
+def test_same_role_for_two_submissions_runs_concurrently_with_own_scope_and_own_report(env):
+    from app.services.gateway import FakeAgentGateway
+
+    class PerSubmission(FakeAgentGateway):
+        def __init__(self):
+            super().__init__(env.data_dir, {"code": scores_template("code")})
+            self.inflight = 0
+            self.max_inflight = 0
+
+        async def run_role(self, run):
+            self.inflight += 1
+            self.max_inflight = max(self.max_inflight, self.inflight)
+            try:
+                await asyncio.sleep(0.02)
+                self._reports["code"] = scores_template("code", 3 if run.submission_id == S1 else 9)
+                result = await super().run_role(run)   # синхронно: шаблон и запись файла не разделяются await
+                await asyncio.sleep(0.02)              # между записью отчёта и приёмом успевает записаться чужой
+                return result
+            finally:
+                self.inflight -= 1
+
+    run = env.create(roles=["code"])
+    gateway = PerSubmission()
+    env.execute(run["id"], gateway)
+
+    assert gateway.max_inflight == 2                      # запуск роли у двух работ не сериализован
+    assert env.scores(S1)["C_CODE"][-1]["score"] == 3
+    assert env.scores(S2)["C_CODE"][-1]["score"] == 9
+    names = sorted(p.name for p in (env.data_dir / "runs" / run["id"] / "reports").iterdir())
+    assert names == [f"code__{S1}.json", f"code__{S2}.json"]
+    assert {c.submission_id for c in gateway.calls} == {S1, S2}
+
+
+def test_orchestrator_has_no_report_serialization_switch(env):
+    import inspect
+
+    from app.services.orchestrator import Orchestrator
+
+    assert "serialize_reports" not in inspect.signature(Orchestrator.__init__).parameters
+
+
+def test_ux_metrics_are_read_from_project_scoped_report(env):
+    run = env.create(roles=["design"])
+    env.execute(run["id"], scripted(env))
+    assert (env.data_dir / "runs" / run["id"] / "reports" / "design__project.json").is_file()
+    assert env.tasks(run["id"], "design", None)[0]["state"] == "done"
 
 
 # ─────────────────────────────── события и чат ───────────────────────────────

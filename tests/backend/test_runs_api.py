@@ -81,7 +81,7 @@ def make_gateway(data_dir: Path, **kw):
                 target = data_dir / "runs" / run.run_id / "reports"
                 target.mkdir(parents=True, exist_ok=True)
                 project_id = run.workdir.split("/")[1]
-                (target / "design.json").write_text(json.dumps({
+                (target / "design__project.json").write_text(json.dumps({
                     "schema_version": "1", "kind": "ux_metrics", "project_id": project_id,
                     "metrics": [{"name": "Время до действия", "how_to_measure": "секундомер",
                                  "good_looks_like": "< 5 с"}]}), encoding="utf-8")
