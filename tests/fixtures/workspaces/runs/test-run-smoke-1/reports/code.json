@@ -1,0 +1,23 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "test-run-smoke-1",
+  "role": "code",
+  "scores": [
+    {
+      "criterion_id": "tech_quality",
+      "status": "scored",
+      "score": 8,
+      "max_score": 10,
+      "confidence": "high",
+      "justification": "Clean architecture and modular code layout.",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "extracted/repo/main.py:1-50",
+          "quote": "Modular implementation"
+        }
+      ]
+    }
+  ]
+}
