@@ -72,21 +72,21 @@ def append_journal_event(event_dict: Dict[str, Any]) -> None:
     journal_path = run_dir / "journal.jsonl"
 
     with _JOURNAL_LOCK:
+        # seq = число непустых строк файла; считаем по байтам без декодирования, чтобы нечитаемая
+        # строка не обнуляла счётчик (backend дедуплицирует по <session_id>#<seq>). Ошибка чтения
+        # файла пробрасывается: лучше потерять событие, чем повторить seq.
         current_seq = 0
+        needs_newline = False
         if journal_path.exists():
-            try:
-                content = journal_path.read_text(encoding="utf-8").strip()
-                if content:
-                    lines = content.splitlines()
-                    current_seq = len(lines)
-            except Exception:
-                current_seq = 0
+            data = journal_path.read_bytes()
+            current_seq = sum(1 for raw in data.split(b"\n") if raw.strip())
+            needs_newline = bool(data) and not data.endswith(b"\n")
 
         event_dict["seq"] = current_seq
 
         line = json.dumps(event_dict, ensure_ascii=False)
-        with open(journal_path, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        with open(journal_path, "ab") as f:
+            f.write((b"\n" if needs_newline else b"") + line.encode("utf-8") + b"\n")
 
 
 def post_tool_call(
