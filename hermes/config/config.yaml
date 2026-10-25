@@ -13,7 +13,13 @@ approvals:
   deny:                         # не выполняется никогда, даже в /yolo
     - "git push --force*"
     - "*curl*|*sh*"
+    - "*wget*|*sh*"
     - "dd if=* of=/dev/*"
+    - "rm -rf /*"
+    - "chmod -R 777*"
+    - "mkfs*"
+    - "shutdown*"
+    - "reboot*"
 
 security:
   redact_secrets: true

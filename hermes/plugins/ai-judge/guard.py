@@ -20,6 +20,7 @@ ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
         "search_files",
         "file_structure",
         "list_directory",
+        "judge_score",
         "report_scores",
         "report_flag",
         "report_claims",
@@ -29,6 +30,7 @@ ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
         "search_files",
         "web_search",
         "delegate_task",
+        "judge_score",
         "report_scores",
         "report_flag",
         "report_claims",
@@ -39,6 +41,7 @@ ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
         "browser_navigate",
         "browser_screenshot",
         "browser_console_logs",
+        "judge_score",
         "report_scores",
         "report_flag",
         "report_claims",
@@ -49,6 +52,7 @@ ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
         "search_files",
         "web_search",
         "git_log",
+        "judge_score",
         "report_scores",
         "report_flag",
         "report_claims",
@@ -56,6 +60,7 @@ ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
     "critic-honesty": {
         "read_file",
         "search_files",
+        "judge_score",
         "report_scores",
         "report_flag",
         "report_claims",
@@ -87,24 +92,16 @@ BLOCKED_EXECUTION_TOOLS = {
 
 
 def extract_role(session_id: str | None) -> str | None:
-    """Извлекает имя роли из идентификатора сессии.
-
-    Форматы:
-    - 'role:<role>:<run_id>' (например 'role:code:sub_123')
-    - '<role>:<run_id>'      (например 'code:sub_456')
-    - '<role>-<run_id>'      (например 'code-sub_789')
-    """
+    """Извлекает имя роли из идентификатора сессии."""
     if not session_id or not isinstance(session_id, str):
         return None
 
-    # role:<role>:<run_id>
     m = re.match(r"^role:([a-z0-9_-]+):?", session_id)
     if m:
         role = m.group(1).lower()
         if role in KNOWN_ROLES:
             return role
 
-    # <role>:<run_id> or <role>-<run_id>
     for r in sorted(KNOWN_ROLES, key=len, reverse=True):
         if session_id == r or session_id.startswith(f"{r}:") or session_id.startswith(f"{r}-"):
             return r
@@ -124,6 +121,17 @@ def extract_run_id(session_id: str | None) -> str | None:
     return None
 
 
+def check_cross_run_access(target_path: str, session_id: str | None) -> tuple[bool, str | None]:
+    """Проверяет, что путь записи не пытается модифицировать чужой run_id."""
+    run_id = extract_run_id(session_id)
+    norm = target_path.replace("\\", "/")
+    if run_id:
+        m = re.search(r"runs/([^/]+)", norm)
+        if m and m.group(1) != run_id:
+            return False, f"Access denied: write outside runs/{run_id}/ (targeting чужой run '{m.group(1)}') is blocked"
+    return True, None
+
+
 def check_tool_call(
     tool_name: str,
     args: dict[str, Any] | None = None,
@@ -139,18 +147,23 @@ def check_tool_call(
     if not role:
         return False, f"Access denied: unknown role or malformed session_id '{session_id}'"
 
+    # 1. Проверка путей файлов и directory traversal в аргументах инструмента (приоритетная безопасность)
+    if args and isinstance(args, dict):
+        for key in ("path", "file_path", "filename", "destination", "output_path", "target"):
+            val = args.get(key)
+            if val and isinstance(val, str):
+                is_write = tool_name.startswith("write_") or "save" in tool_name or key in ("destination", "output_path")
+                ok, reason = check_file_access(val, session_id=session_id, is_write=is_write)
+                if not ok:
+                    return False, reason
+                ok, reason = check_cross_run_access(val, session_id=session_id)
+                if not ok:
+                    return False, reason
+
+    # 2. Проверка белого списка инструментов роли
     allowed = ROLE_ALLOWED_TOOLS.get(role, set())
     if tool_name not in allowed:
         return False, f"Access denied: tool '{tool_name}' is blocked for role '{role}'"
-
-    # Дополнительная проверка путей файлов в аргументах инструмента
-    if args and isinstance(args, dict):
-        path = args.get("path") or args.get("file_path") or args.get("filename")
-        if path and isinstance(path, str):
-            is_write = tool_name.startswith("write_") or "save" in tool_name
-            ok, reason = check_file_access(path, session_id=session_id, is_write=is_write)
-            if not ok:
-                return False, reason
 
     return True, None
 
@@ -166,14 +179,12 @@ def check_file_access(
     if not file_path or not isinstance(file_path, str):
         return False, "Invalid file path"
 
-    # Предотвращение directory traversal
     norm = os.path.normpath(file_path)
     if ".." in norm.split(os.sep):
         return False, "Access denied: directory traversal detected"
 
     if is_write:
         run_id = extract_run_id(session_id)
-        # Запись разрешена только внутри каталога runs/<run_id>/
         normalized_str = norm.replace("\\", "/")
         if run_id:
             expected_prefix = f"runs/{run_id}"
