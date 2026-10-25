@@ -108,7 +108,7 @@ def clone_repository(source: str, destination: str | Path) -> Path:
     if "://" in source or source.startswith("ext::"):
         try:
             addresses = web._public_host(source)
-        except (web.SSRFBlocked, web.FetchFailed) as exc:
+        except (web.SSRFBlocked, web.FetchFailed, ValueError) as exc:
             raise RepositoryError(f"ссылка отклонена: {exc}") from exc
         try:
             parsed = urlsplit(source)
