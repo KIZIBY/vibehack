@@ -88,6 +88,7 @@ UT="$P/scripts/test-unit.sh"
 
 t "test-unit: неизвестная зона → exit 2" 2 ut bash "$UT" bogus
 t_out "test-unit: неизвестная зона → сообщение" 'bogus|зон|zone|[Uu]sage'
+t_out "test-unit: usage перечисляет все зоны, включая contracts" 'backend\|intake\|hermes\|frontend\|contracts\|all'
 t "test-unit: неизвестная зона не запускает интерпретатор" 0 lognot '.'
 
 # зоны без тестов → SKIP и 0 (skip ≠ pass: слово SKIP обязано быть в выводе)
@@ -96,6 +97,9 @@ t_out "test-unit backend без тестов → SKIP backend: тестов не
 t "test-unit backend без тестов → pytest не запускался" 0 lognot 'pytest .*tests'
 t "test-unit intake без тестов → exit 0" 0 ut bash "$UT" intake
 t_out "test-unit intake без тестов → SKIP intake: тестов нет" 'SKIP intake: тестов нет'
+t "test-unit contracts без тестов → exit 0" 0 ut bash "$UT" contracts
+t_out "test-unit contracts без тестов → SKIP contracts: тестов нет" 'SKIP contracts: тестов нет'
+t "test-unit contracts без тестов → pytest не запускался" 0 lognot 'pytest .*tests'
 t "test-unit frontend без package.json → exit 0" 0 ut bash "$UT" frontend
 t_out "test-unit frontend без package.json → SKIP frontend: тестов нет" 'SKIP frontend: тестов нет'
 t "test-unit frontend без package.json → npm не запускался" 0 lognot '^npm '
@@ -103,29 +107,42 @@ t "test-unit без аргумента (= all), тестов нет → exit 0" 
 t_out "test-unit all: SKIP по backend" 'SKIP backend: тестов нет'
 t_out "test-unit all: SKIP по intake" 'SKIP intake: тестов нет'
 t_out "test-unit all: SKIP по frontend" 'SKIP frontend: тестов нет'
+t_out "test-unit all: SKIP по contracts" 'SKIP contracts: тестов нет'
 
 # python-зоны: pytest через .venv/bin/python
 mktest "$P" tests/backend/test_a.py
 mktest "$P" tests/intake/test_b.py
+mktest "$P" tests/contracts/test_c.py
 t "test-unit backend с тестами → exit 0" 0 ut bash "$UT" backend
 t "test-unit backend: pytest на tests/backend через .venv/bin/python" 0 loggrep '^venv .*-m pytest.*tests/backend'
 t "test-unit backend: системный python3 не использован при наличии .venv" 0 lognot '^py3 '
 t "test-unit backend не гоняет intake" 0 lognot 'tests/intake'
+t "test-unit backend не гоняет contracts" 0 lognot 'tests/contracts'
 t "test-unit intake с тестами → exit 0" 0 ut bash "$UT" intake
 t "test-unit intake: pytest на tests/intake через .venv/bin/python" 0 loggrep '^venv .*-m pytest.*tests/intake'
 t "test-unit intake не гоняет backend" 0 lognot 'tests/backend'
+t "test-unit intake не гоняет contracts" 0 lognot 'tests/contracts'
+t "test-unit contracts с тестами → exit 0" 0 ut bash "$UT" contracts
+t "test-unit contracts: pytest на tests/contracts через .venv/bin/python" 0 loggrep '^venv .*-m pytest.*tests/contracts'
+t "test-unit contracts: системный python3 не использован при наличии .venv" 0 lognot '^py3 '
+t "test-unit contracts не гоняет backend и intake" 0 lognot 'tests/(backend|intake)'
 
 # красный раннер зоны → 1 и имя зоны в выводе
 t "test-unit backend: красный pytest → exit 1" 1 ut STUB_RC=1 bash "$UT" backend
 t_out "test-unit backend: красная зона названа" 'backend'
 t "test-unit intake: красный pytest → exit 1" 1 ut STUB_RC=1 bash "$UT" intake
 t_out "test-unit intake: красная зона названа" 'intake'
+t "test-unit contracts: красный pytest → exit 1" 1 ut STUB_RC=1 bash "$UT" contracts
+t_out "test-unit contracts: красная зона названа" 'contracts'
 
 # pytest недоступен при наличии тестов → fail-closed, exit 2 + подсказка setup.sh
 t "test-unit backend: pytest недоступен → exit 2 (fail-closed)" 2 ut STUB_PYTEST_VERSION_RC=1 bash "$UT" backend
 t_out "test-unit backend: подсказка bash scripts/setup.sh" 'bash scripts/setup\.sh'
 t_out_absent "test-unit backend: недоступный pytest не выдан за SKIP" 'SKIP backend'
 t "test-unit intake: pytest недоступен → exit 2 (fail-closed)" 2 ut STUB_PYTEST_VERSION_RC=1 bash "$UT" intake
+t "test-unit contracts: pytest недоступен → exit 2 (fail-closed)" 2 ut STUB_PYTEST_VERSION_RC=1 bash "$UT" contracts
+t_out "test-unit contracts: подсказка bash scripts/setup.sh" 'bash scripts/setup\.sh'
+t_out_absent "test-unit contracts: недоступный pytest не выдан за SKIP" 'SKIP contracts'
 
 # код 5 pytest (тесты не собраны) при наличии файлов тестов — ошибка, не SKIP
 t "test-unit backend: pytest exit 5 при наличии тестов → exit 1" 1 ut STUB_RC=5 bash "$UT" backend
@@ -152,10 +169,12 @@ t_out "test-unit frontend: красная зона названа" 'frontend'
 
 # all: все зоны запускаются; красная зона → красный итог
 t "test-unit all (без аргумента), все зоны с тестами → exit 0" 0 ut bash "$UT"
-t "test-unit all: запущены backend, intake, hermes, frontend" 0 sh -c \
-  'grep -qE "tests/backend" "$1" && grep -qE "tests/intake" "$1" && grep -qE "unittest discover" "$1" && grep -qE "^npm test" "$1"' _ "$STUB_LOG"
+t "test-unit all: запущены backend, intake, contracts, hermes, frontend" 0 sh -c \
+  'grep -qE "tests/backend" "$1" && grep -qE "tests/intake" "$1" && grep -qE "tests/contracts" "$1" && grep -qE "unittest discover" "$1" && grep -qE "^npm test" "$1"' _ "$STUB_LOG"
 t "test-unit all: красная зона → exit 1" 1 ut STUB_RC=1 bash "$UT" all
 t_out "test-unit all: красная зона названа" 'backend|intake|hermes'
+t "test-unit all: красная зона contracts → exit 1" 1 ut STUB_RC=1 bash "$UT" all
+t_out "test-unit all: в красных зонах названа contracts" 'contracts'
 
 # ── 3a. единое соглашение об именах: тестом считается только test_*.py (pytest и unittest discover) ──
 N="$TMP/naming"; mkproj "$N"; NU="$N/scripts/test-unit.sh"
