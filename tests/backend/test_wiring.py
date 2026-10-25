@@ -100,6 +100,8 @@ SOURCES = {
                     "@router.get('/x')\ndef x():\n    raise UnsafePath('/etc/passwd escape')\n"),
     "exists": ("from fastapi import APIRouter\nrouter = APIRouter()\n"
                "@router.get('/x')\ndef x():\n    raise FileExistsError('/srv/data/projects/p/briefs/m/f.txt')\n"),
+    "rubric": ("from fastapi import APIRouter\nfrom app.services.rubric import RubricNotConfirmed\nrouter = APIRouter()\n"
+               "@router.get('/x')\ndef x():\n    raise RubricNotConfirmed('project P-secret has no confirmed rubric')\n"),
     "unsafe_url": ("from fastapi import APIRouter\nfrom app.services.netguard import UnsafeUrl\nrouter = APIRouter()\n"
                    "@router.get('/x')\ndef x():\n    raise UnsafeUrl('http://127.0.0.1/ private')\n"),
 }
@@ -107,7 +109,7 @@ SOURCES = {
 
 @pytest.mark.parametrize("key,status,code", [
     ("payload", 413, "too_large"), ("unsafe_path", 400, "bad_request"),
-    ("exists", 409, "conflict"), ("unsafe_url", 422, "invalid"),
+    ("exists", 409, "conflict"), ("unsafe_url", 422, "invalid"), ("rubric", 409, "rubric_not_confirmed"),
 ])
 def test_service_exceptions_map_to_error_format(tmp_path, monkeypatch, key, status, code):
     from fastapi.testclient import TestClient
@@ -117,5 +119,5 @@ def test_service_exceptions_map_to_error_format(tmp_path, monkeypatch, key, stat
     assert resp.status_code == status, resp.text
     error = resp.json()["error"]
     assert error["code"] == code and error["request_id"] == resp.headers["X-Request-ID"]
-    for leaked in ("secret-path-fragment", "/etc/passwd", "/srv/data", "127.0.0.1"):
+    for leaked in ("secret-path-fragment", "/etc/passwd", "/srv/data", "127.0.0.1", "P-secret"):
         assert leaked not in resp.text, f"в ответе утекло {leaked!r}"
