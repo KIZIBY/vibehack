@@ -1,11 +1,13 @@
 """GET/POST /api/v1/projects/{project_id}/messages (contracts/openapi.yaml)."""
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, StringConstraints
 
 from ..db import SessionDep
+from ..services import briefs as briefs_service
 from ..services import messages as service
+from ..state import get_storage
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/messages")
 
@@ -26,8 +28,11 @@ def list_messages(project_id: str, session: SessionDep, after: Optional[str] = N
 
 
 @router.post("", status_code=201)
-def post_message(project_id: str, body: MessageCreate, session: SessionDep) -> dict:
+async def post_message(project_id: str, body: MessageCreate, session: SessionDep, request: Request) -> dict:
     try:
-        return service.post_organizer_message(session, project_id, body.text)
+        message = service.post_organizer_message(session, project_id, body.text)
     except LookupError:
         raise HTTPException(404, "Проект не найден") from None
+    # на этапе настройки текст организатора — ещё и вводный материал; сбой записи сообщение не теряет
+    await briefs_service.add_chat_brief(session, get_storage(request.app), project_id, body.text)
+    return message

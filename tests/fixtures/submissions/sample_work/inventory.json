@@ -1,0 +1,32 @@
+{
+  "schema_version": "1",
+  "submission_id": "sample_work",
+  "project_id": "demo-proj-1",
+  "team_name": "Alpha Team",
+  "created_at": "2026-10-25T12:00:00Z",
+  "materials": [
+    {
+      "material_id": "mat-repo-1",
+      "type": "repository",
+      "source": {
+        "kind": "upload",
+        "path": "submissions/sample_work/raw/repo.zip"
+      },
+      "status": "ready",
+      "extracted_path": "submissions/sample_work/extracted/repo"
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "missing_required": []
+  },
+  "git": {
+    "available": true,
+    "first_commit_at": "2026-10-25T10:00:00Z",
+    "last_commit_at": "2026-10-25T11:50:00Z",
+    "commit_count": 5,
+    "commits_before_start": 0,
+    "history_rewritten": false,
+    "log_path": "submissions/sample_work/git_log.json"
+  }
+}

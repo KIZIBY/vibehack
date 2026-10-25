@@ -3,5 +3,13 @@ version: 0.1.0
 description: AI-судья — детерминированный подсчёт балла по рубрике и журнал выставленных оценок
 provides_tools:
   - judge_score
+  - report_scores
+  - report_flag
+  - report_claims
+  - report_rubric
+  - report_ux_metrics
+  - report_inventory_patch
 provides_hooks:
+  - pre_tool_call
   - post_tool_call
+  - post_llm_call
