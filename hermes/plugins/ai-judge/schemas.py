@@ -70,6 +70,11 @@ REPORT_SCORES = {
                 },
             },
             "summary": {"type": "string", "description": "Итоговое резюме проверки роли для модального окна"},
+            "experts": {
+                "type": "array",
+                "description": "Только business: подключённые профильные эксперты {name, domain, scores[]}.",
+                "items": {"type": "object"},
+            },
             "submission_id": {"type": "string", "description": "Идентификатор проверяемой работы"},
             "rubric_version": {"type": "integer", "description": "Версия рубрики"},
         },

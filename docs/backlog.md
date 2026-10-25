@@ -351,3 +351,51 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 
 **Журнал:**
 - 2026-10-25 · [developer] заведено по ревью T049.
+
+### B-018 · [developer] agents: backend должен перейти на session_id с scope и файл отчёта <role>__<scope>.json
+
+- **Тип:** contract
+- **Приоритет:** P1
+- **Статус:** open (контракт и backend влиты в 8038ca8; осталась строка про design:project и кросс-тест)
+- **Спека:** `specs/001-ai-judge-platform/` (contracts/agent-run.md §1–§3, T060, T061)
+- **Создано:** 2026-10-25 · agents (ревью code-reviewer, T-единый-разбор-session_id; формат подтвердил владелец)
+
+Контекст: плагин принимает `session_id = "<run_id>:<role>:<scope>"` (scope = submission_id или `project`) и пишет `runs/<run_id>/reports/<role>__<scope>.json`; для инструментов оценок scope `project` запрещён. Backend (`gateway.py` шлёт `<run_id>:<role>`, `reports.py` читает `<role>.json`) и `agent-run.md` ещё на старом формате: пока не обновлены, плагин откажет в report_* и отчёты не найдутся (все критерии `no_data`).
+
+Желаемое поведение (чек-лист приёмки):
+- [ ] `agent-run.md` §1 (путь отчёта), §2 (session_id), §3 п.2 — новый формат (правку ведёт ветка ship/contract-fix);
+- [ ] `gateway.py`: `session_id = f"{run_id}:{role}:{submission_id}"`; `reports.py`: читать `{role}__{submission_id}.json`;
+- [ ] кросс-тест «плагин пишет — backend читает» на одно имя файла;
+- [ ] design: метрики UX сдаются отдельным запуском `<run_id>:design:project` один раз на проект (`report_ux_metrics` откажет при повторе и вне scope `project`), оценки работ — `<run_id>:design:<submission_id>`.
+
+**Журнал:**
+- 2026-10-25 · [agents] заведено; плагин и тесты в PR зоны hermes.
+
+### B-019 · [developer] agents: мелкие замечания ревью (P2)
+
+- **Тип:** tech-debt
+- **Приоритет:** P3
+- **Статус:** open
+- **Спека:** `specs/001-ai-judge-platform/` (T060–T062, T070)
+- **Создано:** 2026-10-25 · agents (ревью code-reviewer, не блокеры)
+
+Желаемое поведение (чек-лист приёмки):
+- [ ] `report_inventory_patch` пишет один `inventory_patch.json` на run: при нескольких работах в одном run перезапись; имя `inventory_patch__<scope>.json` согласовать с backend;
+- [ ] `guard.check_file_access`: проверка префикса `runs/<run_id>` подстрокой; сделать сравнение по сегментам пути;
+- [ ] `run_role.py`: имя каталога работы с пробелами/кириллицей/`.` даёт невалидный scope, скрипт рапортует успех; валидировать и падать; Idempotency-Key без scope (контракт — `<run_id>:<role>:<attempt>`);
+- [ ] `reports.write_atomic`: tmp-имя только по pid, read-modify-write отчёта без блокировки (параллельные report_* одной сессии); журнал: `seq` по числу строк без межпроцессной блокировки;
+- [ ] ревью P2: `evilcheck.check_report` требует полный путь файла в evidence флага (а навыки допускают sha/URL/слайд); порог NFR-010 для сдвига на злых работах не задан; `rubric_version` берётся из аргументов модели (должен приходить из входа запуска); сигнатуры хуков журнала (`tool`) и guard (`tool_name`) сверить на живом Hermes; `delegate_task` в business: toolsets экспертов (только чтение) и запрет `report_*`; `test_report_experts` задаёт `source_ref` рубрики объектом (по схеме строка), `save_rubric` не валидирует по схеме;
+- [ ] `docker-compose.yml` монтирует только `skills/ai-judge`; новые навыки `ai-judge-*` не смонтированы (сейчас инструкции передаёт run_role/backend из репозитория, монтирование нужно для самостоятельного вызова навыков в Hermes).
+
+### B-020 · [developer] agents: T001 и T003 отмечены выполненными по симуляции
+
+- **Тип:** process
+- **Приоритет:** P2
+- **Статус:** open
+- **Спека:** `specs/001-ai-judge-platform/` (T001, T003, research.md R4/R6)
+- **Создано:** 2026-10-25 · agents
+
+Контекст: цифры в «Результатах спайков» получены в режиме `--simulate`. Нужен живой замер человеком (чек-лист в research.md, скрипт `hermes/scripts/spike_live.sh`); до этого R4/R6 — гипотезы, навык `ai-judge-design` помечен `[спайк]`.
+
+Желаемое поведение (чек-лист приёмки):
+- [ ] замер выполнен, цифры в research.md заменены, T001/T003 подтверждены.

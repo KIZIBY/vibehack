@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from . import guard
+except (ImportError, ValueError):
+    import guard
+
 _JOURNAL_LOCK = threading.RLock()
 
 # Patterns for secret masking (NFR-012)
@@ -58,8 +63,8 @@ def append_journal_event(event_dict: Dict[str, Any]) -> None:
     Append an event to runs/<run_id>/journal.jsonl in a thread-safe, sequential manner.
     """
     run_id = event_dict.get("run_id")
-    if not run_id:
-        return
+    if not isinstance(run_id, str) or not guard._SAFE_ID.match(run_id) or ".." in run_id:
+        return  # небезопасный run_id никогда не становится частью пути
 
     data_root = _get_data_root()
     run_dir = data_root / "runs" / run_id
@@ -97,8 +102,11 @@ def post_tool_call(
     """
     Hook called after a tool execution. Appends event to journal.jsonl.
     """
-    run_id = session_id.split(":")[0] if ":" in session_id else session_id
-    role = session_id.split(":")[1] if ":" in session_id else None
+    parsed = guard.parse_session_id(session_id) or {}
+    run_id = parsed.get("run_id") or (session_id.split(":")[0] if session_id else None)
+    role = parsed.get("role")
+    if submission_id is None and parsed.get("scope") not in (None, guard.PROJECT_SCOPE):
+        submission_id = parsed["scope"]
 
     # Map special tool calls to specific event types
     event_name = "tool_call"
@@ -146,8 +154,11 @@ def post_llm_call(
     Hook called after an LLM generation. Appends model_call event to journal.jsonl.
     Leaves tokens and cost as null if no provider metrics available (NFR-008).
     """
-    run_id = session_id.split(":")[0] if ":" in session_id else session_id
-    role = session_id.split(":")[1] if ":" in session_id else None
+    parsed = guard.parse_session_id(session_id) or {}
+    run_id = parsed.get("run_id") or (session_id.split(":")[0] if session_id else None)
+    role = parsed.get("role")
+    if submission_id is None and parsed.get("scope") not in (None, guard.PROJECT_SCOPE):
+        submission_id = parsed["scope"]
 
     event_payload = {
         "schema_version": "1",

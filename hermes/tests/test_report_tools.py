@@ -2,7 +2,7 @@
 
 Tests verify that:
 1. 'scored' status without evidence is rejected with a clear error message (RED requirement).
-2. Valid scores with evidence are accepted and written atomically to runs/<run_id>/reports/<role>.json.
+2. Valid scores with evidence are accepted and written atomically to runs/<run_id>/reports/<role>__<scope>.json.
 3. Multiple reports for the same criterion update the score (last score wins).
 4. report_flag appends flags with required evidence.
 5. report_claims, report_rubric, report_ux_metrics, and report_inventory_patch function correctly.
@@ -43,7 +43,7 @@ class ReportToolsTest(unittest.TestCase):
         """RED requirement: status='scored' without evidence must be rejected."""
         params = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -58,14 +58,14 @@ class ReportToolsTest(unittest.TestCase):
                 }
             ],
         }
-        resp = json.loads(tools.report_scores(params, session_id="role:code:run_001"))
+        resp = json.loads(tools.report_scores(params, session_id="run_001:code:sub_1"))
         self.assertFalse(resp["success"])
         self.assertIn("evidence", resp["error"].lower())
 
     def test_scored_with_empty_evidence_is_rejected(self):
         params = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -80,17 +80,17 @@ class ReportToolsTest(unittest.TestCase):
                 }
             ],
         }
-        resp = json.loads(tools.report_scores(params, session_id="role:code:run_001"))
+        resp = json.loads(tools.report_scores(params, session_id="run_001:code:sub_1"))
         self.assertFalse(resp["success"])
         self.assertIn("evidence", resp["error"].lower())
 
     def test_valid_scores_saved_and_last_criterion_score_wins(self):
         """Multiple reports for same criterion update it (last score wins)."""
-        session_id = "role:code:run_001"
+        session_id = "run_001:code:sub_1"
         # First call: score 6.0
         params1 = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -111,7 +111,7 @@ class ReportToolsTest(unittest.TestCase):
         # Second call: score 9.0 on c1 and a new criterion c2
         params2 = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -137,7 +137,7 @@ class ReportToolsTest(unittest.TestCase):
         self.assertTrue(resp2["success"])
 
         # Read saved report
-        report_file = Path(self.test_dir) / "runs" / "run_001" / "reports" / "code.json"
+        report_file = Path(self.test_dir) / "runs" / "run_001" / "reports" / "code__sub_1.json"
         self.assertTrue(report_file.exists())
         doc = json.loads(report_file.read_text(encoding="utf-8"))
 
@@ -147,7 +147,7 @@ class ReportToolsTest(unittest.TestCase):
         self.assertEqual(scores_by_id["c2"]["status"], "no_data")
 
     def test_report_flag_appends_and_validates(self):
-        session_id = "role:critic-uniqueness:run_001"
+        session_id = "run_001:critic-uniqueness:sub_1"
         flag_params = {
             "run_id": "run_001",
             "role": "critic-uniqueness",
@@ -161,7 +161,7 @@ class ReportToolsTest(unittest.TestCase):
         resp = json.loads(tools.report_flag(flag_params, session_id=session_id))
         self.assertTrue(resp["success"])
 
-        report_file = Path(self.test_dir) / "runs" / "run_001" / "reports" / "critic-uniqueness.json"
+        report_file = Path(self.test_dir) / "runs" / "run_001" / "reports" / "critic-uniqueness__sub_1.json"
         doc = json.loads(report_file.read_text(encoding="utf-8"))
         self.assertEqual(len(doc["flags"]), 1)
         self.assertEqual(doc["flags"][0]["type"], "plagiarism")
