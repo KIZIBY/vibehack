@@ -43,7 +43,7 @@ class ReportToolsTest(unittest.TestCase):
         """RED requirement: status='scored' without evidence must be rejected."""
         params = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -65,7 +65,7 @@ class ReportToolsTest(unittest.TestCase):
     def test_scored_with_empty_evidence_is_rejected(self):
         params = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -90,7 +90,7 @@ class ReportToolsTest(unittest.TestCase):
         # First call: score 6.0
         params1 = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [
@@ -111,7 +111,7 @@ class ReportToolsTest(unittest.TestCase):
         # Second call: score 9.0 on c1 and a new criterion c2
         params2 = {
             "run_id": "run_001",
-            "submission_id": "sub_001",
+            "submission_id": "sub_1",
             "role": "code",
             "rubric_version": 1,
             "scores": [

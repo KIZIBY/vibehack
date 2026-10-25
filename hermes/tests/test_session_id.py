@@ -82,10 +82,10 @@ class ReportPathTest(unittest.TestCase):
         self.assertTrue(res.get("success"), res)
         self.assertTrue((Path(self.d) / "runs/r1/reports/business__sub_8.json").exists())
 
-    def test_project_scope_default(self):
-        params = {"scores": [ND]}
-        json.loads(tools.report_scores(params, session_id="r1:design"))
-        self.assertTrue((Path(self.d) / "runs/r1/reports/design__project.json").exists())
+    def test_project_scope_refused_for_scoring(self):
+        res = json.loads(tools.report_scores({"scores": [ND]}, session_id="r1:design"))
+        self.assertFalse(res["success"])
+        self.assertFalse((Path(self.d) / "runs/r1/reports/design__project.json").exists())
 
 
 class JournalSessionTest(unittest.TestCase):
