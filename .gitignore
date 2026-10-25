@@ -26,3 +26,6 @@ report.xml
 .venv/
 .ruff_cache/
 .pytest_cache/
+
+# локальная БД по умолчанию (JUDGE_DATABASE_URL не задан)
+judge.db
