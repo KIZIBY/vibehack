@@ -2,7 +2,7 @@
 import json
 import logging
 
-from . import schemas, tools
+from . import guard, schemas, tools
 
 log = logging.getLogger(__name__)
 
@@ -21,4 +21,5 @@ def register(ctx):
         schema=schemas.JUDGE_SCORE,
         handler=tools.judge_score,
     )
+    ctx.register_hook("pre_tool_call", guard.pre_tool_call_guard)
     ctx.register_hook("post_tool_call", _log_verdict)
