@@ -90,34 +90,46 @@ BLOCKED_EXECUTION_TOOLS = {
 }
 
 
-def extract_role(session_id: str | None) -> str | None:
-    """Извлекает имя роли из идентификатора сессии."""
-    if not session_id or not isinstance(session_id, str):
-        return None
-
-    m = re.match(r"^role:([a-z0-9_-]+):?", session_id)
-    if m:
-        role = m.group(1).lower()
-        if role in KNOWN_ROLES:
-            return role
-
-    for r in sorted(KNOWN_ROLES, key=len, reverse=True):
-        if session_id == r or session_id.startswith(f"{r}:") or session_id.startswith(f"{r}-"):
-            return r
-
-    return None
+_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+PROJECT_SCOPE = "project"
 
 
-def extract_run_id(session_id: str | None) -> str | None:
-    """Извлекает run_id из session_id."""
+def parse_session_id(session_id: str | None) -> dict[str, str] | None:
+    """Единый разбор session_id = "<run_id>:<role>[:<scope>]" (contracts/agent-run.md).
+
+    scope = submission_id или "project" (по умолчанию). Любое отклонение (неизвестная роль,
+    небезопасные символы, лишние сегменты) даёт None: вызывающий закрывается отказом.
+    """
     if not session_id or not isinstance(session_id, str):
         return None
     parts = session_id.split(":")
-    if len(parts) >= 3 and parts[0] == "role":
-        return parts[2]
-    if len(parts) >= 2:
-        return parts[1]
-    return None
+    if len(parts) not in (2, 3):
+        return None
+    run_id, role = parts[0], parts[1]
+    scope = parts[2] if len(parts) == 3 else PROJECT_SCOPE
+    if not _SAFE_ID.match(run_id) or not _SAFE_ID.match(scope) or ".." in run_id or ".." in scope:
+        return None
+    if role not in KNOWN_ROLES:
+        return None
+    return {"run_id": run_id, "role": role, "scope": scope}
+
+
+def extract_role(session_id: str | None) -> str | None:
+    """Роль из session_id."""
+    p = parse_session_id(session_id)
+    return p["role"] if p else None
+
+
+def extract_run_id(session_id: str | None) -> str | None:
+    """run_id из session_id."""
+    p = parse_session_id(session_id)
+    return p["run_id"] if p else None
+
+
+def extract_scope(session_id: str | None) -> str | None:
+    """scope (submission_id или "project") из session_id."""
+    p = parse_session_id(session_id)
+    return p["scope"] if p else None
 
 
 def check_cross_run_access(target_path: str, session_id: str | None) -> tuple[bool, str | None]:

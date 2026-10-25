@@ -66,11 +66,11 @@ def main():
     poll_interval = args.poll_interval or float(os.environ.get("POLL_INTERVAL", "1.0"))
     timeout = args.timeout or float(os.environ.get("TIMEOUT_SECONDS", "900.0"))
 
-    session_id = f"{run_id}:{role}"
     instructions = load_role_instructions(role, repo_root)
 
     # Derive submission_id from workdir if possible
     submission_id = Path(workdir).name
+    session_id = f"{run_id}:{role}:{submission_id}"
 
     payload = {
         "session_id": session_id,
@@ -123,8 +123,9 @@ def main():
         status = status_data.get("status", "running")
         if status in terminal_statuses:
             if status == "completed":
-                rel_report_path = f"runs/{run_id}/reports/{role}.json"
-                full_report_path = os.path.join(data_root, "runs", run_id, "reports", f"{role}.json")
+                report_name = f"{role}__{submission_id}.json"
+                rel_report_path = f"runs/{run_id}/reports/{report_name}"
+                full_report_path = os.path.join(data_root, "runs", run_id, "reports", report_name)
                 print("Run completed successfully.")
                 print(f"Report: {rel_report_path}")
                 if os.path.exists(full_report_path):

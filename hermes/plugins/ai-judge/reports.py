@@ -156,14 +156,25 @@ def validate_flag_item(flag: Any) -> None:
         validate_evidence(ev, context=f"flag.evidence[{ev_idx}]")
 
 
-def get_role_report_path(run_id: str, role: str) -> Path:
-    """Возвращает путь к файлу отчёта роли: runs/<run_id>/reports/<role>.json."""
-    return DATA_DIR / "runs" / run_id / "reports" / f"{role}.json"
+def get_role_report_path(run_id: str, role: str, scope: str = "project") -> Path:
+    """Путь отчёта роли: runs/<run_id>/reports/<role>__<scope>.json (scope = submission_id | project)."""
+    for label, val in (("run_id", run_id), ("role", role), ("scope", scope)):
+        if not isinstance(val, str) or not guard._SAFE_ID.match(val) or ".." in val:
+            raise ValueError(f"invalid {label}: {val!r}")
+    return DATA_DIR / "runs" / run_id / "reports" / f"{role}__{scope}.json"
 
 
-def load_or_init_scores_doc(run_id: str, role: str, submission_id: str = "", rubric_version: int = 1) -> dict[str, Any]:
+def resolve_scope(params: dict[str, Any], session_id: str | None) -> str:
+    """scope отчёта: scope сессии (не подменяется моделью), иначе submission_id из аргументов, иначе project."""
+    sess = guard.extract_scope(session_id)
+    if sess and sess != guard.PROJECT_SCOPE:
+        return sess
+    return params.get("submission_id") or guard.PROJECT_SCOPE
+
+
+def load_or_init_scores_doc(run_id: str, role: str, submission_id: str = "", rubric_version: int = 1, scope: str = "project") -> dict[str, Any]:
     """Загружает существующий отчёт роли или инициализирует пустой документ по схеме."""
-    path = get_role_report_path(run_id, role)
+    path = get_role_report_path(run_id, role, scope)
     if path.exists():
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -194,7 +205,8 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
     if not role or role not in VALID_ROLES:
         raise ValueError(f"valid role is required (one of {sorted(VALID_ROLES)})")
 
-    submission_id = params.get("submission_id") or ""
+    scope = resolve_scope(params, session_id)
+    submission_id = params.get("submission_id") or (scope if scope != guard.PROJECT_SCOPE else "")
     rubric_version = int(params.get("rubric_version") or 1)
 
     raw_scores = params.get("scores")
@@ -205,7 +217,7 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
         validate_score_item(item, idx)
 
     # Загружаем текущий отчёт роли для объединения оценок
-    doc = load_or_init_scores_doc(run_id, role, submission_id=submission_id, rubric_version=rubric_version)
+    doc = load_or_init_scores_doc(run_id, role, submission_id=submission_id, rubric_version=rubric_version, scope=scope)
     if submission_id:
         doc["submission_id"] = submission_id
     doc["rubric_version"] = rubric_version
@@ -219,7 +231,7 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
     if "summary" in params and isinstance(params["summary"], str):
         doc["summary"] = params["summary"]
 
-    report_path = get_role_report_path(run_id, role)
+    report_path = get_role_report_path(run_id, role, scope)
     write_atomic(report_path, doc)
 
     return {"success": True, "saved_criteria": len(doc["scores"]), "report_path": str(report_path)}
@@ -241,11 +253,12 @@ def save_flag(params: dict[str, Any], session_id: str | None = None) -> dict[str
 
     validate_flag_item(flag_data)
 
-    doc = load_or_init_scores_doc(run_id, role)
+    scope = resolve_scope(params, session_id)
+    doc = load_or_init_scores_doc(run_id, role, scope=scope)
     flags = doc.setdefault("flags", [])
     flags.append(flag_data)
 
-    report_path = get_role_report_path(run_id, role)
+    report_path = get_role_report_path(run_id, role, scope)
     write_atomic(report_path, doc)
 
     return {"success": True, "total_flags": len(flags), "report_path": str(report_path)}
@@ -276,10 +289,11 @@ def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[s
         for ev in evidence:
             validate_evidence(ev, context=f"claims[{idx}]")
 
-    doc = load_or_init_scores_doc(run_id, role)
+    scope = resolve_scope(params, session_id)
+    doc = load_or_init_scores_doc(run_id, role, scope=scope)
     doc["claims"] = claims
 
-    report_path = get_role_report_path(run_id, role)
+    report_path = get_role_report_path(run_id, role, scope)
     write_atomic(report_path, doc)
 
     return {"success": True, "claims_count": len(claims), "report_path": str(report_path)}
