@@ -1,0 +1,214 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — рантайм-агностик guard (append-only журналы, секреты, лизы).
+#
+# Активируется: bash scripts/install-git-hooks.sh (git config core.hooksPath .githooks).
+# Ловит на `git commit` ЛЮБОГО рантайма (Claude/Codex/bare git) — в отличие от Claude-only
+# .claude/settings.json hooks. Разовый обход: git commit --no-verify (тих на уровне флага;
+# результат backdate виден в diff-истории постфактум).
+#
+# Проверки (все advisory-конвенции устава → machine-CHECK при коммите; устав source-of-truth):
+#   1. append-only (I-2/I-3): docs/ops-journal.md + specs/*/{audit,sdd-changelog,
+#      delivery-changelog} — staged blob обязан иметь HEAD blob exact byte-prefix; вставка в
+#      середину, правка/удаление/rename (backdate) → BLOCK.
+#   2. секреты (I-7): sk-live-/AKIA/private key в добавленных строках → BLOCK (allowlist: файлы,
+#      документирующие сами паттерны).
+#   3. lease-enforcement: staged-путь под действующим ЧУЖИМ lease из coordination/leases/ →
+#      BLOCK; правка/удаление чужого действующего .lease → BLOCK (вердикт по HEAD-версии);
+#      свой/просроченный/новый (take) → пропуск; битый lease → WARN + fail-open per-file;
+#      каталога нет → graceful-скип.
+#   4. TODO/FIXME без #issue → WARN (I-11, не блок).
+# Fail-open (I-8): сбой самого guard'а (не нарушение) → WARN + пропуск, не роняем legit-коммит.
+set -uo pipefail
+
+fail=0
+# guarded-журналы (append-only): exact staged-prefix policy, не hunk-эвристика
+guarded() {
+  case "$1" in
+    docs/ops-journal.md|specs/*/audit.md|specs/*/sdd-changelog.tsv|specs/*/delivery-changelog.tsv)
+      return 0 ;;
+    *) return 1 ;;
+  esac
+}
+# allowlist секрет-грепа: файлы, легитимно НЕСУЩИЕ секрет-паттерны как текст/regex/фикстуры
+secret_allow() {
+  case "$1" in
+    docs/constitution.md|docs/constitution-check.md) return 0;;
+    .githooks/pre-commit|scripts/secret-patterns.sh) return 0;;
+    tests/harness/fixtures/*) return 0;;
+    *) return 1;;
+  esac
+}
+
+# SECRET_RE — ЕДИНЫЙ ИСТОЧНИК паттернов: sourceable scripts/secret-patterns.sh, который читают
+# этот хук, preflight, intake и publish (ноль дрейфа между потребителями).
+# Хук исполняется git'ом от корня репо (core.hooksPath) → путь repo-relative. Файла нет →
+# INLINE-FALLBACK: НИКОГДА не ослаблять секрет-гард (fail-CLOSED), оставляем базовое ядро
+# (sk-live-/AKIA/private-key).
+if [ -f scripts/secret-patterns.sh ]; then
+  # shellcheck source=scripts/secret-patterns.sh
+  . scripts/secret-patterns.sh
+fi
+# fallback НЕ через ${VAR:=default}: default несёт '}' из {16} → закрыл бы parameter-expansion раньше
+# времени (усечение паттерна = дыра в гарде). Явное присваивание фикс-строкой безопаснее.
+if [ -z "${SECRET_RE:-}" ]; then
+  SECRET_RE='sk-live-[A-Za-z0-9]|AKIA[0-9A-Z]{16}|BEGIN (RSA|OPENSSH) PRIVATE KEY'
+fi
+
+# --- 1. append-only backdate guard: HEAD bytes must be an exact prefix of staged bytes ----------
+# This rejects insertion/reordering and duplicate-line tricks that a hunk/multiset parser cannot
+# distinguish from a legitimate tail append.  A missing final LF may still be repaired because the
+# previous bytes remain the exact prefix.
+while IFS="$(printf '\t')" read -r status path _rest; do
+  [ -n "${path:-}" ] || continue
+  if guarded "$path"; then :
+  elif case "$status" in R*) guarded "${_rest:-}" ;; *) false ;; esac; then :
+  else continue
+  fi
+  case "$status" in
+    D*|R*) echo "pre-commit: BLOCK $path — удаление/переименование журнала нарушает append-only (I-2/I-3)" >&2; fail=1; continue ;;
+    T*) echo "pre-commit: BLOCK $path — type-change журнала нарушает regular 100644 append-only authority (I-2/I-3)" >&2; fail=1; continue ;;
+  esac
+  index_entry="$(git ls-files -s -- "$path" 2>/dev/null || true)"
+  if ! printf '%s\n' "$index_entry" | LC_ALL=C grep -Eq '^100644 ([0-9a-f]{40}|[0-9a-f]{64}) 0[[:space:]]'; then
+    echo "pre-commit: BLOCK $path — guarded journal в index обязан быть ровно regular 100644 stage-0 (I-2/I-3)" >&2
+    fail=1
+    continue
+  fi
+  case "$status" in
+    A*) continue ;;                         # новый regular 100644 журнал — легит, весь '+'
+  esac
+  perl - "$path" <<'PERL' >/dev/null 2>&1
+use strict; use warnings;
+my $path=shift;
+sub blob {
+  my ($selector)=@_;
+  open(my $fh,'-|','git','show',$selector) or exit 2;
+  binmode($fh); local $/; my $raw=<$fh>; my $ok=close($fh);
+  exit 2 unless $ok && defined($raw); return $raw;
+}
+my $old=blob("HEAD:$path"); my $new=blob(":$path");
+exit(length($new)>=length($old) && substr($new,0,length($old)) eq $old ? 0 : 1);
+PERL
+  append_rc=$?
+  if [ "$append_rc" -eq 1 ]; then
+    echo "pre-commit: BLOCK $path — staged bytes не являются exact append к HEAD (backdate/insert/reorder, I-2/I-3)." >&2
+    echo "pre-commit:   Дописывай штатным writer; разовый обход: git commit --no-verify" >&2
+    fail=1
+  elif [ "$append_rc" -ne 0 ]; then
+    echo "pre-commit: WARN append-guard не прочитал HEAD/index blob $path — fail-open" >&2
+  fi
+done < <(git diff --cached --name-status --diff-filter=ACMRTD 2>/dev/null)
+
+# --- 2. секрет-греп (добавленные строки, allowlist документирующих паттерны файлов) ---
+while IFS="$(printf '\t')" read -r status path _rest; do
+  [ -n "${path:-}" ] || continue
+  secret_allow "$path" && continue
+  added="$(git diff --cached --unified=0 -- "$path" 2>/dev/null | grep '^+' | grep -vE '^\+\+\+ ' || true)"
+  if printf '%s' "$added" | grep -qE "$SECRET_RE"; then
+    echo "pre-commit: BLOCK $path — canonical secret policy (I-7): cloud/provider keys, private key или URL userinfo. Секреты — в env, не в коммит." >&2
+    echo "pre-commit:   Ложное срабатывание? git commit --no-verify" >&2
+    fail=1
+  fi
+done < <(git diff --cached --name-status --diff-filter=ACM 2>/dev/null)
+
+# --- 3. lease-enforcement: путь под чужим действующим lease → BLOCK (однопроходно) ---
+# graceful-скип: каталога нет физически / лизов нет и staged их не трогает; probe ловит
+# git rm последнего .lease — пустой глоб не снимает защиту самого lease-файла
+if [ -d coordination/leases ] && { ls coordination/leases/*.lease >/dev/null 2>&1 || ! git diff --cached --quiet --no-renames -- coordination/leases 2>/dev/null; }; then
+  br="$(git branch --show-current 2>/dev/null || true)"
+  if [ -z "$br" ]; then
+    echo "pre-commit: WARN lease-guard: нет имени ветки (detached HEAD?) — fail-open, lease-проверка пропущена" >&2
+  else
+    # один git diff + один perl на ВСЕ лизы: glob, парсинг, TTL (Time::Local) и матчинг внутри
+    git diff --cached --name-only -z --no-renames 2>/dev/null | perl -e '
+      use strict; use Time::Local; use File::Glob qw(bsd_glob);
+      my $me = shift(@ARGV); my $now = time(); my $rc = 0;
+      sub parse_lease { # текст lease → (\%поля, undef) | (undef, причина битости)
+        my ($txt) = @_; my %f; my @paths;
+        for my $line (split /\n/, $txt) {
+          if    ($line =~ /^session: (.+)$/)   { my $v = $1; $f{session} = $v }
+          elsif ($line =~ /^scope: (.+)$/)     { my $v = $1; $f{scope} = $v }
+          elsif ($line =~ /^path: (.+)$/)      { my $v = $1; push @paths, $v }
+          elsif ($line =~ /^created: (.+)$/)   { my $v = $1; $f{created} = $v }
+          elsif ($line =~ /^ttl_hours: (.+)$/) { my $v = $1; $f{ttl} = $v }
+        }
+        return (undef, "нет обязательных полей") unless defined $f{session} && defined $f{scope} && defined $f{created} && defined $f{ttl} && @paths;
+        return (undef, "paths > 32") if @paths > 32;
+        return (undef, "нечисловой ttl_hours") unless $f{ttl} =~ /^\d+$/;
+        return (undef, "кривой created") unless $f{created} =~ /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
+        my ($Y, $Mo, $D, $H, $Mi, $S) = ($1, $2, $3, $4, $5, $6); # capture → переменные сразу (docs/pipeline-rules.md)
+        my $t0 = eval { timegm($S, $Mi, $H, $D, $Mo - 1, $Y) };
+        return (undef, "кривой created") unless defined $t0;
+        $f{expires} = $t0 + $f{ttl} * 3600; $f{paths} = \@paths;
+        return (\%f, undef);
+      }
+      sub glob_re { # глоб → regex: метасимволы ТОЛЬКО * ? (** = сквозь /), остальное quotemeta — анти-ReDoS
+        my ($g) = @_; my $re = "";
+        for my $tok (split /(\*\*|\*|\?)/, $g) {
+          next unless length $tok;
+          if    ($tok eq "**") { $re .= ".*" }
+          elsif ($tok eq "*")  { $re .= "[^/]*" }
+          elsif ($tok eq "?")  { $re .= "[^/]" }
+          else                 { $re .= quotemeta($tok) }
+        }
+        return $re;
+      }
+      sub head_lease { # HEAD-версия staged .lease: вердикт по ней (staged/worktree подделываемы)
+        my ($p) = @_;
+        my $pid = open(my $fh, "-|");
+        return undef unless defined $pid;
+        if ($pid == 0) { open(STDERR, ">", "/dev/null"); exec("git", "show", "HEAD:$p") or exit 128 }
+        my $txt = do { local $/; <$fh> }; close($fh);
+        return ($? == 0 && defined $txt && length $txt) ? $txt : undef;
+      }
+      my @active; # действующие ЧУЖИЕ лизы worktree: [файл, владелец, [qr...]]
+      for my $lf (sort(bsd_glob("coordination/leases/*.lease"))) {
+        my $sz = -s $lf;
+        if (!defined($sz) || $sz > 2048) { warn "pre-commit: WARN lease-guard: $lf аномален (нет размера/>2048 байт) — исключён из enforcement (fail-open per-file)\n"; next }
+        my $txt; if (open(my $fh, "<", $lf)) { local $/; $txt = <$fh>; close($fh) }
+        if (!defined $txt) { warn "pre-commit: WARN lease-guard: $lf не читается — исключён из enforcement (fail-open per-file)\n"; next }
+        my ($L, $why) = parse_lease($txt);
+        if (!$L) { warn "pre-commit: WARN lease-guard: $lf битый ($why) — исключён из enforcement (fail-open per-file)\n"; next }
+        next if $L->{expires} < $now || $L->{session} eq $me;
+        push @active, [$lf, $L->{session}, [map { my $r = glob_re($_); (m{/$}) ? qr/^$r/ : qr/^$r$/ } @{$L->{paths}}]];
+      }
+      my $in = do { local $/; <STDIN> }; $in = "" unless defined $in;
+      for my $p (grep { length } split /\0/, $in) {
+        if ($p =~ m{^coordination/leases/[^/]+\.lease$}) { # сам lease-файл — защищаемый ресурс
+          my $head = head_lease($p);
+          next unless defined $head; # нет в HEAD = новый lease (take) — пропуск
+          my ($L, $why) = parse_lease($head);
+          next unless $L;            # битый ≠ действующий — чистка легитимна
+          next if $L->{expires} < $now || $L->{session} eq $me;
+          print STDERR "pre-commit: BLOCK $p — правка/удаление чужого действующего lease (session=$L->{session}) снимает enforcement\n";
+          print STDERR "pre-commit:   истёк? возьми/сними: scripts/coordination-lease.sh; разовый обход: git commit --no-verify\n";
+          $rc = 1; next;
+        }
+        for my $A (@active) {
+          if (grep { $p =~ $_ } @{$A->[2]}) {
+            print STDERR "pre-commit: BLOCK $p — путь под действующим чужим lease $A->[0] (session=$A->[1])\n";
+            print STDERR "pre-commit:   истёк? возьми/сними: scripts/coordination-lease.sh; разовый обход: git commit --no-verify\n";
+            $rc = 1; last;
+          }
+        }
+      }
+      exit $rc;
+    ' "$br"
+    lrc=$?
+    if [ "$lrc" -eq 1 ]; then
+      fail=1
+    elif [ "$lrc" -ne 0 ]; then
+      echo "pre-commit: WARN lease-guard сбой (exit $lrc) — fail-open, lease-проверка пропущена" >&2
+    fi
+  fi
+fi
+
+# --- 4. TODO/FIXME без #issue → WARN (I-11, не блок) ---
+todo="$(git diff --cached --unified=0 2>/dev/null | grep '^+' | grep -vE '^\+\+\+ ' \
+  | grep -iE 'TODO|FIXME' | grep -vE '#[0-9]+|#issue|TEMP:' || true)"
+if [ -n "$todo" ]; then
+  echo "pre-commit: WARN TODO/FIXME без #issue-ссылки (I-11) — оформи '// TEMP: … #issue' или сними:" >&2
+  printf '%s\n' "$todo" | head -3 | sed 's/^/pre-commit:   /' >&2
+fi
+
+exit "$fail"

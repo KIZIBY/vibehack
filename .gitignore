@@ -1,0 +1,23 @@
+# служебный мусор ОС и редакторов
+.DS_Store
+*.bak-*
+
+# зависимости и секреты окружения — никогда не в git
+node_modules/
+.env
+
+# генерируемые артефакты харнесса
+docs/pipeline-dashboard.html
+docs/telemetry-dashboard.html
+__pycache__/
+*.pyc
+
+# локальные артефакты браузерного QA
+.playwright-mcp/
+
+# артефакты локального прогона self-test сьюта (scripts/ci-test-report.py)
+run-tests.log
+report.xml
+
+# сырой лог телеметрии агентов (промпты, пути машины) — только локально; см. docs/telemetry.md
+.harness/

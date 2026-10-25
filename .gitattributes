@@ -1,0 +1,5 @@
+# Append-only журналы: параллельные дописи в разных ветках сливаются без конфликта (union),
+# порядок строк сохраняется. Правка/удаление прошлых строк блокируется .githooks/pre-commit.
+docs/ops-journal.md merge=union
+specs/*/audit.md merge=union
+docs/failures.md merge=union
