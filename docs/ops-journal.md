@@ -34,3 +34,4 @@ DORA-события: `deploy:start|done|failed` · `publish:done|failed` · `inc
 
 | ts (UTC) | event | detail |
 |---|---|---|
+| 2026-10-25T10:07:34Z | publish:pr | branch=ai-judge sha=6e6362d |
