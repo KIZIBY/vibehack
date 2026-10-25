@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import signal
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -163,13 +164,15 @@ class IntakeRunner:
 
     def _read_inventory(self, path: Path) -> dict:
         try:
-            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
         except FileNotFoundError:
             raise IntakeFailed("no_inventory") from None
         except OSError:        # в том числе ELOOP: опись — симлинк
             raise IntakeFailed("bad_inventory") from None
         try:
             with os.fdopen(fd, "rb") as handle:
+                if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):      # FIFO/устройство вместо файла
+                    raise IntakeFailed("bad_inventory")
                 raw = handle.read(MAX_INVENTORY_BYTES + 1)
         except OSError:
             raise IntakeFailed("bad_inventory") from None

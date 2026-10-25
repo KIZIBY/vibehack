@@ -122,7 +122,7 @@ class Storage:
                 await asyncio.to_thread(handle.flush)
                 await asyncio.to_thread(os.fsync, handle.fileno())
             final = directory / name
-            await asyncio.to_thread(os.replace, temp, final)
+            await asyncio.to_thread(_publish_without_overwrite, temp, final)
         except BaseException:
             try:
                 os.unlink(temp)
@@ -149,6 +149,20 @@ class Storage:
                 continue
             removed += _empty_directory(directory)
         return removed
+
+
+def _publish_without_overwrite(temp: Path, final: Path) -> None:
+    """Переносит временный файл на место, не затирая существующий (FileExistsError)."""
+    try:
+        os.link(temp, final)
+    except FileExistsError:
+        raise
+    except OSError:                 # файловая система без жёстких ссылок
+        if os.path.lexists(final):
+            raise FileExistsError(str(final.name)) from None
+        os.replace(temp, final)
+        return
+    os.unlink(temp)
 
 
 def _empty_directory(directory: Path) -> int:

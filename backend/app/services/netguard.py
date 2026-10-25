@@ -7,7 +7,7 @@
 import ipaddress
 import re
 import socket
-from typing import Callable, Sequence
+from typing import Callable, NamedTuple, Sequence, Tuple
 from urllib.parse import quote, urljoin, urlsplit
 
 MAX_URL_LENGTH = 2048
@@ -22,6 +22,12 @@ _NAT64 = ipaddress.ip_network("64:ff9b::/96")
 
 class UnsafeUrl(ValueError):
     """Ссылка недопустима: схема, адрес, формат или число редиректов."""
+
+
+class PublicTarget(NamedTuple):
+    """Проверенная ссылка и публичные адреса хоста: клиент подключается к ним, а не резолвит имя заново."""
+    url: str
+    addresses: Tuple[str, ...]
 
 
 def _is_public_ip(ip) -> bool:
@@ -57,6 +63,11 @@ def _check_name(host: str) -> str:
 
 def validate_public_url(url: str, *, resolver: Callable = socket.getaddrinfo) -> str:
     """Возвращает нормализованный URL или бросает UnsafeUrl."""
+    return resolve_public_url(url, resolver=resolver).url
+
+
+def resolve_public_url(url: str, *, resolver: Callable = socket.getaddrinfo) -> PublicTarget:
+    """Как validate_public_url, но отдаёт и проверенные адреса (для подключения без повторного DNS-запроса)."""
     if not isinstance(url, str) or not url or len(url) > MAX_URL_LENGTH:
         raise UnsafeUrl("недопустимая ссылка")
     if _FORBIDDEN_CHARS.search(url) or any(ch.isspace() for ch in url):
@@ -85,6 +96,7 @@ def validate_public_url(url: str, *, resolver: Callable = socket.getaddrinfo) ->
         if not _is_public_ip(ip):
             raise UnsafeUrl("адрес не публичный")
         host_text = f"[{ip}]"
+        addresses = (str(ip),)
     else:
         host = raw_host.rstrip(".")
         if not host:
@@ -97,17 +109,19 @@ def validate_public_url(url: str, *, resolver: Callable = socket.getaddrinfo) ->
             if not _is_public_ip(ip):
                 raise UnsafeUrl("адрес не публичный")
             host_text = str(ip)
+            addresses = (host_text,)
         else:
             host_text = _check_name(host)
-            _check_resolution(host_text, port or (443 if scheme == "https" else 80), resolver)
+            addresses = _check_resolution(host_text, port or (443 if scheme == "https" else 80), resolver)
 
     path = quote(parts.path or "/", safe="/%:@!$&'()*+,;=~-._")
     query = quote(parts.query, safe="/%:@!$&'()*+,;=~-._?")
     netloc = host_text + (f":{port}" if port is not None else "")
-    return f"{scheme}://{netloc}{path}" + (f"?{query}" if parts.query else "")
+    normalized = f"{scheme}://{netloc}{path}" + (f"?{query}" if parts.query else "")
+    return PublicTarget(normalized, addresses)
 
 
-def _check_resolution(host: str, port: int, resolver: Callable) -> None:
+def _check_resolution(host: str, port: int, resolver: Callable) -> Tuple[str, ...]:
     try:
         infos = resolver(host, port, type=socket.SOCK_STREAM)
     except Exception:
@@ -115,6 +129,7 @@ def _check_resolution(host: str, port: int, resolver: Callable) -> None:
     addresses = [info[4][0] for info in infos or ()]
     if not addresses:
         raise UnsafeUrl("хост не резолвится")
+    checked = set()
     for address in addresses:       # ВСЕ ответы должны быть публичными (DNS rebinding)
         try:
             ip = ipaddress.ip_address(str(address).split("%", 1)[0])
@@ -122,6 +137,8 @@ def _check_resolution(host: str, port: int, resolver: Callable) -> None:
             raise UnsafeUrl("недопустимый адрес в ответе DNS") from None
         if not _is_public_ip(ip):
             raise UnsafeUrl("хост указывает на непубличный адрес")
+        checked.add(str(ip))
+    return tuple(sorted(checked))
 
 
 def validate_redirect(location: str, base_url: str, *, resolver: Callable = socket.getaddrinfo) -> str:
