@@ -205,9 +205,11 @@ main_phys="$(cd "$main_wt" && pwd -P)" || exit 2
 # path/branch pairs; Bash variables cannot contain NUL, but can safely contain every path byte Git
 # permits except NUL itself. A detached worktree gets an empty branch field.
 worktree_pairs_nul() {
-  local raw
-  if raw="$(root_git worktree list --porcelain -z 2>/dev/null)"; then
-    printf '%s' "$raw" | perl -0777 -e '
+  local nul_out
+  nul_out="$(mktemp "${TMPDIR:-/tmp}/wt-porcelain.XXXXXX")" || return 1
+  # bash 3.2 (macOS /bin/bash) выбрасывает NUL из подстановки $(...): вывод -z держим в файле, не в переменной
+  if root_git worktree list --porcelain -z >"$nul_out" 2>/dev/null; then
+    perl -0777 -e '
     use strict; use warnings;
     my $raw = do { local $/; <STDIN> } // "";
     for my $rec (split /\0\0/, $raw) {
@@ -218,8 +220,12 @@ worktree_pairs_nul() {
       $b = "" unless defined $b;
       print $w, "\0", $b, "\0";
     }
-  '
+' < "$nul_out"
+    local rc=$?
+    rm -f "$nul_out"
+    return "$rc"
   else
+    rm -f "$nul_out"
     # Git versions before porcelain -z (for example Debian/Ubuntu images with Git 2.34)
     # still provide a record-oriented porcelain format. Convert it to the same NUL protocol.
     root_git worktree list --porcelain 2>/dev/null | perl -0777 -e '
