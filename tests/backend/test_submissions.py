@@ -652,3 +652,63 @@ def test_batch_archive_too_large_is_413(app, client, project, tmp_path, monkeypa
     resp = post_batch(client, project["id"], archive=zip_bytes({"A/x.txt": b"x" * 5000}))
     assert resp.status_code == 413
     assert rows(app, "SELECT id FROM submission") == [] and stored_files(tmp_path) == []
+
+
+# ─────────────────────────────── находки ревью (один круг) ───────────────────────────────
+
+def test_batch_bad_link_row_does_not_reserve_the_team_name(app, client, project, tmp_path):
+    table = csv_bytes(HEADER, "Альфа,http://169.254.169.254/x,,,", "Альфа,https://github.com/a/alfa,,,")
+    resp = post_batch(client, project["id"], table, archive=zip_bytes({"Альфа/x.txt": b"x"}))
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert [i["team_name"] for i in body["items"]] == ["Альфа"]
+    assert [r["row"] for r in body["rejected"]] == ["2"]
+    assert types_by_team(app) == {"Альфа": ["archive", "repository"]}
+
+
+def test_batch_folder_of_a_rejected_row_is_reported_not_silently_lost(app, client, project, tmp_path):
+    table = csv_bytes(HEADER, "Альфа,http://169.254.169.254/x,,,")
+    resp = post_batch(client, project["id"], table, archive=zip_bytes({"Альфа/x.txt": b"x"}))
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["items"] == [] and sorted(r["row"] for r in body["rejected"]) == ["2", "Альфа"]
+    assert rows(app, "SELECT id FROM submission") == [] and stored_files(tmp_path) == []
+
+
+def test_batch_folder_name_is_matched_after_trim_and_normalization(app, client, project):
+    import unicodedata
+    nfd = unicodedata.normalize("NFD", "Йота")
+    table = csv_bytes("team_name", "Альфа", "Йота")
+    archive = zip_bytes({"Альфа /x.txt": b"x", f"{nfd}/y.txt": b"y"})
+    resp = post_batch(client, project["id"], table, archive=archive)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["rejected"] == [] and [i["team_name"] for i in resp.json()["items"]] == ["Альфа", "Йота"]
+    assert types_by_team(app) == {"Альфа": ["archive"], "Йота": ["archive"]}
+
+
+def test_batch_archive_with_more_than_500_folders_is_413(app, client, project, tmp_path):
+    resp = post_batch(client, project["id"], archive=zip_bytes({f"T{i}/x": b"x" for i in range(501)}))
+    assert resp.status_code == 413 and error_of(resp)["code"] == "too_large"
+    assert rows(app, "SELECT id FROM submission") == [] and stored_files(tmp_path) == []
+
+
+def test_uniqueness_does_not_rely_on_the_process_lock_alone(app, project, monkeypatch):
+    """Второй процесс не делит блокировку потоков: уникальность обязана держаться и на самой транзакции БД."""
+    import contextlib
+    from app.services import submissions
+    monkeypatch.setattr(submissions, "_project_lock", lambda project_id: contextlib.nullcontext())
+    barrier = threading.Barrier(2)
+    statuses = []
+
+    def worker(team):
+        c = make_client(app)
+        barrier.wait()
+        statuses.append(post_sub(c, project["id"], team).status_code)
+
+    threads = [threading.Thread(target=worker, args=(n,)) for n in ("Команда", "команда")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(statuses) == [201, 409]
+    assert len(rows(app, "SELECT id FROM submission")) == 1

@@ -293,3 +293,23 @@ def test_unknown_or_deleted_submission_is_a_quiet_noop(app, tmp_path):
     run(run_intake(app, project_id, sub_id))
     assert not counter.exists()
     assert submission(app, sub_id)["intake_status"] == "pending"
+
+
+# ─────────────────────────────── находка ревью (один круг) ───────────────────────────────
+
+@pytest.mark.parametrize("which", ["submission_id", "project_id"])
+def test_inventory_of_another_submission_is_not_accepted(app, tmp_path, caplog, which):
+    from app.services.intake_flow import run_intake
+    old = "M" * 26
+    project_id, sub_id = seed(app, materials=[(old, "host", "url", "https://github.com/a/b")])
+    data = inventory(project_id, sub_id, [{"material_id": old, "type": "repository", "source": {"kind": "url", "url": "https://github.com/a/b"},
+                                           "status": "unavailable", "reason": "чужая опись"}])
+    data[which] = "OTHER-" + which
+    install_runner(app, ok_script(tmp_path, data))
+    with caplog.at_level(logging.DEBUG):
+        run(run_intake(app, project_id, sub_id))
+    sub = submission(app, sub_id)
+    assert (sub["intake_status"], sub["completeness"], sub["inventory_path"]) == ("failed", "unknown", None)
+    assert rows(app, "SELECT status, type FROM material") == [{"status": "available", "type": "host"}]
+    assert rows(app, "SELECT id FROM message") == [] and collect_events(app, project_id) == []
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
