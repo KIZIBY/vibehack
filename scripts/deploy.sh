@@ -20,11 +20,21 @@ trap 'die "failed at line $LINENO"' ERR
 [[ -n "$HOST" ]] || die "нужен DEPLOY_HOST с публичным IP"
 [[ -n "$TLS_EMAIL" ]] || die "нужен TLS_EMAIL для автоматического продления IP-сертификата"
 [[ -f "$ENV_FILE" ]] || die "нет $ENV_FILE; создайте его на сервере (см. docs/guides/OPERATIONS_GUIDE.md)"
+# The env file is private, but release assets must be readable by nginx/www-data.
+umask 022
 
 command -v apt-get >/dev/null || die "поддерживается Debian/Ubuntu с apt-get"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-venv nginx certbot python3-certbot-nginx curl rsync nodejs npm
 command -v npm >/dev/null || die "не удалось установить Node.js/npm"
+
+CERTBOT_CMD="$(command -v certbot)"
+if ! "$CERTBOT_CMD" help all 2>&1 | grep -q -- '--ip-address'; then
+  CERTBOT_VENV="$BASE/certbot-venv"
+  python3 -m venv "$CERTBOT_VENV"
+  "$CERTBOT_VENV/bin/python" -m pip install --quiet --upgrade pip certbot certbot-nginx
+  CERTBOT_CMD="$CERTBOT_VENV/bin/certbot"
+fi
 
 install -d -m 0750 "$BASE/releases" "$STATE/data" "$(dirname "$ENV_FILE")" /etc/systemd/system
 install -d -m 0700 "$STATE"
@@ -37,6 +47,9 @@ python3 -m venv "$BASE/venv"
 "$BASE/venv/bin/python" -m pip install --quiet --upgrade pip
 "$BASE/venv/bin/pip" install --quiet -r "$RELEASE_DIR/backend/requirements.txt"
 (cd "$RELEASE_DIR/frontend" && npm ci --silent && npm run build)
+chmod 0755 "$BASE" "$BASE/releases" "$RELEASE_DIR" "$RELEASE_DIR/frontend" "$RELEASE_DIR/frontend/dist"
+find "$RELEASE_DIR/frontend/dist" -type d -exec chmod 0755 {} +
+find "$RELEASE_DIR/frontend/dist" -type f -exec chmod 0644 {} +
 
 install -d -m 0750 "$STATE/backups"
 if [[ -f "$STATE/judge.db" ]]; then
@@ -88,7 +101,7 @@ nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
 
-certbot certonly --webroot -w /var/www/$APP --ip-address "$HOST" \
+"$CERTBOT_CMD" certonly --webroot -w /var/www/$APP --ip-address "$HOST" \
   --preferred-profile shortlived --email "$TLS_EMAIL" \
   --agree-tos --non-interactive --keep-until-expiring
 
@@ -120,11 +133,18 @@ server {
 EOF
 
 nginx -t
+systemctl reload nginx
 systemctl daemon-reload
 systemctl enable --now "$APP"
 systemctl restart "$APP"
-curl --fail --silent --show-error --max-time 10 https://$HOST/health >/dev/null
-curl --fail --silent --show-error --max-time 10 https://$HOST/ >/dev/null
+for attempt in $(seq 1 30); do
+  if curl --fail --silent --show-error --max-time 2 --resolve "$HOST:443:127.0.0.1" "https://$HOST/health" >/dev/null; then
+    break
+  fi
+  [[ "$attempt" -eq 30 ]] && die "backend health не стал готов за 30 секунд"
+  sleep 1
+done
+curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/" >/dev/null
 
 if [[ -x "$ROOT/scripts/ops-log.sh" ]]; then
   "$ROOT/scripts/ops-log.sh" deploy:done "sha=$RELEASE scope=$APP host=$HOST"
