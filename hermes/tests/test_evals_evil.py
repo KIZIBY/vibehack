@@ -1,5 +1,4 @@
 """T072: корпус prompt-injection и проверка, что отчёт роли не поддался инструкции."""
-import json
 import sys
 import unittest
 from pathlib import Path
