@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -41,6 +42,19 @@ def find_data_root(path: Path) -> Path | None:
     return None
 
 
+def layout_ids(path: Path) -> tuple[str, str] | None:
+    """(проект, работа) по раскладке projects/<p>/submissions/<s>[/…]."""
+    parts = path.resolve().parts
+    for index in range(len(parts) - 4, -1, -1):
+        if parts[index] == "projects" and parts[index + 2] == "submissions":
+            return parts[index + 1], parts[index + 3]
+    return None
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[\W_]+", "", text.casefold())
+
+
 def _slug(text: str) -> str:
     return re.sub(r"[^\w.-]", "_", text)[:60] + "-" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
 
@@ -67,7 +81,8 @@ class _Text(HTMLParser):
 
 
 class Context:
-    def __init__(self, source: Path, output: Path, project_id: str, submission_id: str, data_root: Path | None, ids_given: bool) -> None:
+    def __init__(self, source: Path, output: Path, project_id: str, submission_id: str, data_root: Path | None, ids_given: bool, team_name: str | None = None) -> None:
+        self.team_name = team_name
         self.source, self.output = source.resolve(), output.resolve()
         self.project_id, self.submission_id = project_id, submission_id
         self.data_root = data_root.resolve() if data_root else find_data_root(self.source) or find_data_root(self.output)
@@ -170,10 +185,24 @@ def _repo_material(ctx: Context, material: dict, clone_source: str, dest: Path) 
                    "commits_before_start": info["commits_before_start"], "history_rewritten": info["history_rewritten"], "log_path": ctx.ref(Path(info["git_log_path"]))}
 
 
+def _prune_to_team(ctx: Context, out: Path) -> None:
+    """Общий архив пачки («папка на команду»): остаётся только папка этой команды, чужой код в работу не попадает."""
+    if not ctx.team_name:
+        return
+    folders = [d for d in out.iterdir() if d.is_dir() and not d.is_symlink()]
+    own = [d for d in folders if _norm(d.name) == _norm(ctx.team_name)]
+    if not own:
+        return
+    for item in out.iterdir():
+        if item not in own:
+            shutil.rmtree(item, ignore_errors=True) if item.is_dir() and not item.is_symlink() else item.unlink(missing_ok=True)
+
+
 def _handle_archive(ctx: Context, path: Path, material: dict, extra: list[dict]) -> None:
     out = ctx.derived / _slug(material["material_id"])
-    report = safe_unpack(path, out)
-    material["extracted"] = {"file_count": report.files}
+    safe_unpack(path, out)
+    _prune_to_team(ctx, out)
+    material["extracted"] = {"file_count": sum(1 for item in out.rglob("*") if item.is_file())}
     if ctx.git is not None:
         return
     for current, dirs, _files in os.walk(out):
@@ -228,7 +257,8 @@ def _read_links(ctx: Context) -> list[dict]:
 
 def _process_link(ctx: Context, entry: dict) -> dict:
     url = entry["url"]
-    kind = entry.get("type") if entry.get("type") in MATERIAL_TYPES else classify_url(url)
+    declared = entry.get("type")
+    kind = declared if isinstance(declared, str) and declared in MATERIAL_TYPES else classify_url(url)
     identifier = entry.get("material_id") if isinstance(entry.get("material_id"), str) and entry.get("material_id") else "link-" + _slug(url)
     material = {"material_id": identifier, "type": kind, "source": {"kind": "url", "url": _clean_url(url)}, "status": "available"}
     try:
@@ -272,11 +302,20 @@ def _mask(ctx: Context) -> int:
 def _similarity(ctx: Context) -> None:
     if not (ctx.data_root and ctx.project_id and ctx.source.parent.name == "submissions" and ctx.source.parent.parent.name == ctx.project_id):
         return
-    works = {d.name: d for d in sorted(ctx.source.parent.iterdir()) if d.is_dir() and not d.is_symlink()}
-    target = ctx.data_root / "projects" / ctx.project_id / "similarity.json"
-    temporary = target.with_name(f".similarity-{os.getpid()}.tmp")
-    similarity.write_similarity(ctx.project_id, works, temporary)
-    os.replace(temporary, target)
+    project_dir = ctx.data_root / "projects" / ctx.project_id
+    target = project_dir / "similarity.json"
+    with open(project_dir / ".similarity.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)      # параллельные intake одного проекта: каждый пересчитывает под замком, итог сходится
+        try:
+            works = {d.name: d for d in sorted(ctx.source.parent.iterdir()) if d.is_dir() and not d.is_symlink() and (d / "inventory.json").is_file()}
+            temporary = target.with_name(f".similarity-{os.getpid()}.tmp")
+            try:
+                similarity.write_similarity(ctx.project_id, works, temporary)
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def run_pipeline(source: Path, output: Path, *, project_id: str = "project", submission_id: str | None = None, team_name: str | None = None,
@@ -284,9 +323,14 @@ def run_pipeline(source: Path, output: Path, *, project_id: str = "project", sub
     """Запускает все этапы и всегда пишет inventory.json, в том числе при частичных сбоях."""
     source, output = Path(source), Path(output)
     ids_given = project_id != "project" and submission_id is not None
+    if not ids_given:
+        derived = layout_ids(source)
+        if derived and project_id == "project" and submission_id is None:
+            project_id, submission_id = derived
+            ids_given = True
     submission_id = submission_id or source.name
     required = [item for chunk in (required or []) for item in str(chunk).split(",") if item]
-    ctx = Context(source, output, project_id, submission_id, data_root, ids_given)
+    ctx = Context(source, output, project_id, submission_id, data_root, ids_given, team_name)
     materials: list[dict] = []
     stages = [("files", lambda: _process_files(ctx, materials))] if source.is_dir() else []
     if not source.is_dir():
@@ -304,10 +348,6 @@ def run_pipeline(source: Path, output: Path, *, project_id: str = "project", sub
     except Exception as exc:  # noqa: BLE001
         ctx.warnings.append(f"mask: {ctx.reason(exc)}")
     output.mkdir(parents=True, exist_ok=True)
-    try:
-        _similarity(ctx)
-    except Exception as exc:  # noqa: BLE001
-        ctx.warnings.append(f"similarity: {ctx.reason(exc)}")
     present = {item["type"] for item in materials if item["status"] in {"available", "partial"}}
     missing = [item for item in required if item not in present]
     inventory = {"schema_version": "1", "submission_id": submission_id, "project_id": project_id, "team_name": team_name or source.name, "created_at": _now(),
@@ -316,4 +356,8 @@ def run_pipeline(source: Path, output: Path, *, project_id: str = "project", sub
     if ctx.git is not None:
         inventory["git"] = ctx.git
     (output / "inventory.json").write_text(json.dumps(inventory, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:      # необязательный этап после описи: его сбой или таймаут описи не лишает
+        _similarity(ctx)
+    except Exception as exc:  # noqa: BLE001
+        print(f"intake: similarity: {ctx.reason(exc)}", file=__import__("sys").stderr)
     return inventory
