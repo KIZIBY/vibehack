@@ -1,0 +1,7 @@
+name: ai-judge
+version: 0.1.0
+description: AI-судья — детерминированный подсчёт балла по рубрике и журнал выставленных оценок
+provides_tools:
+  - judge_score
+provides_hooks:
+  - post_tool_call

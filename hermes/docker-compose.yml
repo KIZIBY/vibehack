@@ -1,0 +1,23 @@
+# Hermes Agent + обвес ai-judge. Выкатка — bash hermes/deploy.sh, подробности — hermes/README.md.
+services:
+  hermes:
+    image: nousresearch/hermes-agent:${HERMES_VERSION:-v0.22.5}
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    ports:
+      # Только loopback: Docker публикует порты в обход ufw. Снаружи — SSH-туннель или reverse proxy с TLS.
+      - "127.0.0.1:8642:8642"   # API шлюза (включается API_SERVER_ENABLED=true в .env)
+      - "127.0.0.1:9119:9119"   # дашборд
+    volumes:
+      - ${HERMES_DATA_DIR:-~/.hermes}:/opt/data
+      # Наш код — read-only, по подпапке: в остальное содержимое skills/ и plugins/ пишет сам агент.
+      - ./plugins/ai-judge:/opt/data/plugins/ai-judge:ro
+      - ./skills/ai-judge:/opt/data/skills/ai-judge:ro
+    environment:
+      - HERMES_DASHBOARD=1
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
