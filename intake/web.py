@@ -33,7 +33,7 @@ class FetchResult:
     output: str
 
 
-def _public_host(url: str) -> None:
+def _public_host(url: str) -> list[str]:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise SSRFBlocked("only http/https URLs are allowed")
@@ -47,6 +47,7 @@ def _public_host(url: str) -> None:
             raise FetchFailed(f"DNS lookup failed: {host}") from exc
     if any(address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_reserved or address.is_unspecified for address in addresses):
         raise SSRFBlocked(f"private or reserved address blocked: {host}")
+    return [str(address) for address in addresses]
 
 
 class PublicRedirects(HTTPRedirectHandler):

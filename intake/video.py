@@ -29,14 +29,14 @@ def extract_video(path: str | Path, output: str | Path, *, transcriber=None) -> 
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise VideoExtractionError("ffmpeg and ffprobe are required for video intake")
     output.mkdir(parents=True, exist_ok=True)
-    probe = _run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)])
+    probe = _run(["ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)])
     duration = float(probe.stdout.strip() or 0)
     limited = min(duration, MAX_SECONDS)
     audio = output / "audio.wav"
-    _run(["ffmpeg", "-y", "-i", str(path), "-t", str(MAX_SECONDS), "-vn", "-ac", "1", "-ar", "16000", str(audio)])
+    _run(["ffmpeg", "-protocol_whitelist", "file", "-y", "-i", str(path), "-t", str(MAX_SECONDS), "-vn", "-ac", "1", "-ar", "16000", str(audio)])
     frames = output / "frames"
     frames.mkdir(exist_ok=True)
-    _run(["ffmpeg", "-y", "-i", str(path), "-t", str(MAX_SECONDS), "-vf", "fps=1/30", str(frames / "%03d.jpg")])
+    _run(["ffmpeg", "-protocol_whitelist", "file", "-y", "-i", str(path), "-t", str(MAX_SECONDS), "-vf", "fps=1/30", str(frames / "%03d.jpg")])
     result = {"duration_seconds": duration, "processed_seconds": limited, "audio_path": audio.as_posix(), "frames_dir": frames.as_posix(), "frame_interval_seconds": 30, "limits_applied": ["video limited to first 10 minutes"] if duration > MAX_SECONDS else []}
     if transcriber is None:
         result["transcript"] = {"status": "unavailable", "reason": "T002 threshold/model is not available in this intake process; use extracted audio or frames"}
