@@ -40,3 +40,4 @@ DORA-события: `deploy:start|done|failed` · `publish:done|failed` · `inc
 | 2026-10-25T11:50:07Z | publish:pr | branch=backend-projects sha=bf39c6c |
 | 2026-10-25T12:04:41Z | publish:pr | branch=ship/agents commits=16 zone=C |
 | 2026-10-25T11:55:59Z | publish:pr | branch=backend-projects sha=0c06851 |
+| 2026-10-25T13:22:44Z | publish:pr | branch=ship-person3-intake sha=18362c3 |
