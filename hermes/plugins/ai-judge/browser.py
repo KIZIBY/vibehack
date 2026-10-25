@@ -7,7 +7,6 @@ runs/<run_id>/browser/ и герметичность контекстов пар
 from __future__ import annotations
 
 import logging
-import os
 import re
 from typing import Any
 

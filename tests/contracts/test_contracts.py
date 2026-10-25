@@ -260,13 +260,19 @@ def test_fixture_matches_schema(directory: str, name: str):
 
 
 # ── 4. страж полноты каталога фикстур ──
+# Каталоги зон B и C: исходные материалы для intake (архивы, PDF, репозитории) и рабочие каталоги агентского слоя.
+# Это не фикстуры контрактов, схемами они не проверяются (docs/backlog.md B-014).
+ZONE_FIXTURE_DIRS = frozenset({"submissions", "workspaces"})
+
+
 def test_fixtures_dir_exists():
     assert FIXTURES_DIR.is_dir(), f"нет каталога фикстур {_rel(FIXTURES_DIR)} (T013)"
 
 
 def test_no_unmapped_fixture_dirs():
     assert FIXTURES_DIR.is_dir(), f"нет каталога фикстур {_rel(FIXTURES_DIR)} (T013)"
-    unmapped = sorted(p.name for p in FIXTURES_DIR.iterdir() if p.is_dir() and p.name not in FIXTURE_DIR_TO_SCHEMA)
+    unmapped = sorted(p.name for p in FIXTURES_DIR.iterdir() if p.is_dir() and p.name not in FIXTURE_DIR_TO_SCHEMA
+                      and p.name not in ZONE_FIXTURE_DIRS)
     assert not unmapped, (
         f"подкаталоги {_rel(FIXTURES_DIR)} без записи в сопоставлении каталог->схема: {unmapped}. "
         f"Добавь запись в FIXTURE_DIR_TO_SCHEMA (tests/contracts/test_contracts.py) или убери каталог"
@@ -275,7 +281,8 @@ def test_no_unmapped_fixture_dirs():
 
 def test_fixtures_are_json_only():
     assert FIXTURES_DIR.is_dir(), f"нет каталога фикстур {_rel(FIXTURES_DIR)} (T013)"
-    foreign = sorted(_rel(p) for p in FIXTURES_DIR.rglob("*") if p.is_file() and p.suffix != ".json")
+    foreign = sorted(_rel(p) for p in FIXTURES_DIR.rglob("*")
+                     if p.is_file() and p.suffix != ".json" and p.relative_to(FIXTURES_DIR).parts[0] not in ZONE_FIXTURE_DIRS)
     assert not foreign, f"в каталоге фикстур допустимы только *.json, найдено лишнее: {foreign}"
 
 

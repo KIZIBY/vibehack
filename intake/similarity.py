@@ -53,5 +53,7 @@ def compare_submissions(submissions: dict[str, str | Path], output: str | Path |
         pairs.append({"submission_a": left, "submission_b": right, "score": round(score, 4), "shared_windows": len(shared), "fragments": fragments})
     result = {"schema_version": "1", "pairs": pairs}
     if output:
-        target = Path(output); target.parent.mkdir(parents=True, exist_ok=True); target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        target = Path(output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return result

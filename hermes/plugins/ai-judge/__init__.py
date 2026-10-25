@@ -1,5 +1,4 @@
 """ai-judge — плагин Hermes: детерминированный подсчёт балла по рубрике и журнал оценок."""
-import json
 import logging
 
 from . import guard, journal, schemas, tools
