@@ -470,3 +470,41 @@ def test_failed_attempt_logged_as_warning_and_no_secrets_in_logs(tmp_path, monke
     assert any(r["level"] == "WARNING" for r in records), "нет записи WARNING о неудачной попытке входа"
     for secret in (wrong, DEMO_PW, SESSION_SECRET, token):
         assert secret not in text, f"секрет попал в журнал: {secret[:8]}…"
+
+
+# ═══════════════ ревью T021/T022: мусор в cookie и рост лимитера ═══════════════
+
+JUNK_TOKENS = ["é.é", "пр.пр", "a.b.c", ".", "", None, "a" * 100000]
+
+
+@pytest.mark.parametrize("junk", JUNK_TOKENS, ids=lambda v: "none" if v is None else repr(v)[:20])
+def test_session_manager_verify_returns_none_for_junk(junk):
+    from app.auth import SessionManager
+    assert SessionManager(SESSION_SECRET).verify(junk) is None
+
+
+@pytest.mark.parametrize("cookie", [b"session=\xe9.\xe9", b"session=\xff\xfe", b"session=", b"session",
+                                    b"session=aaa.bbb; session=ccc.ddd", b"session=\xd0\xbf\xd1\x80.\xd0\xbf\xd1\x80"])
+def test_junk_cookie_header_gives_401_not_500(tmp_path, monkeypatch, cookie):
+    client = make_client(make_app(tmp_path, monkeypatch))
+    assert_unauthorized(client.get(ME, headers={"cookie": cookie}))
+
+
+def test_login_limiter_forgets_expired_clients():
+    from app.auth import LoginLimiter
+    clock = Clock()
+    limiter = LoginLimiter(clock)
+    for i in range(1000):
+        limiter.register(f"10.0.{i // 256}.{i % 256}")
+    assert limiter.tracked_clients() == 1000
+    clock.advance(61)
+    limiter.register("192.0.2.1")
+    assert limiter.tracked_clients() <= 1, "записи об адресах с истёкшим окном должны удаляться"
+
+
+def test_login_limiter_has_hard_cap_on_tracked_clients():
+    from app.auth import LoginLimiter
+    limiter = LoginLimiter(Clock(), max_clients=100)
+    for i in range(150):
+        limiter.register(f"10.1.{i // 256}.{i % 256}")   # без исключений, все в одном окне
+    assert limiter.tracked_clients() <= 100

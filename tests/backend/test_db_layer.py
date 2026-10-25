@@ -535,3 +535,103 @@ def test_version_conflict_maps_to_409_error_format(tmp_path, monkeypatch):
     assert body["error"]["code"] == "version_conflict"
     assert body["error"]["message"] and "secret-sql-internals" not in resp.text
     assert body["error"]["request_id"] == "vc-1" == resp.headers["X-Request-ID"]
+
+
+# ═══════════════ ревью T021/T022: commit до ответа, мусорные курсоры ═══════════════
+
+@pytest.mark.parametrize("garbage", ["a", "abc", "!!!", "ключ", "=====", "YQ", ""])
+def test_decode_cursor_garbage_always_value_error(garbage):
+    from app.repositories.base import decode_cursor
+    with pytest.raises(ValueError) as err:
+        decode_cursor(garbage)
+    # binascii.Error и UnicodeError — подклассы ValueError, но наружу должен выходить именно ValueError
+    assert type(err.value) is ValueError, f"наружу вышло {type(err.value).__module__}.{type(err.value).__name__}"
+
+
+def test_keyset_page_after_single_char_garbage_is_value_error(tmp_path):
+    from app.db import session_scope
+    from app.repositories.base import keyset_page
+    _, factory = new_factory(tmp_path)
+    with session_scope(factory) as s:
+        with pytest.raises(ValueError):
+            keyset_page(s, "message", limit=10, after="a")
+
+
+SESSION_DEP_ROUTES = '''
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import text
+from app.db import SessionDep
+router = APIRouter()
+
+_INSERT = text("INSERT INTO project (id, name, type, status, agents, required_materials, retention_days, "
+               "last_activity_at, version, created_at, updated_at) VALUES (:id, 'n', 'other', 'setup', '[]', '{}', 7, "
+               "'2026-01-01 00:00:00.000000', 1, '2026-01-01 00:00:00.000000', '2026-01-01 00:00:00.000000')")
+
+@router.post("/dbt/sd-add")
+def write(session: SessionDep):
+    session.execute(_INSERT, {"id": "SD1"})
+    return {"ok": True}
+
+@router.post("/dbt/sd-400")
+def write_then_400(session: SessionDep):
+    session.execute(_INSERT, {"id": "SD2"})
+    raise HTTPException(400, "rejected")
+'''
+
+
+def session_dep_app(tmp_path, monkeypatch):
+    from app.config import load_settings
+    from app.main import create_app
+    pkg = f"sdt_{uuid.uuid4().hex[:10]}"
+    (tmp_path / pkg).mkdir()
+    (tmp_path / pkg / "__init__.py").write_text("")
+    (tmp_path / pkg / "routes.py").write_text(textwrap.dedent(SESSION_DEP_ROUTES))
+    monkeypatch.syspath_prepend(str(tmp_path))
+    return create_app(load_settings({"JUDGE_DATABASE_URL": migrated_url(tmp_path, "sd.db")}), routers_package=pkg)
+
+
+def projects_in_db(app) -> int:
+    from app.db import session_scope
+    with session_scope(app.state.session_factory) as s:
+        return count(s, "project")
+
+
+def test_session_dep_commits_before_response_and_row_is_visible(tmp_path, monkeypatch):
+    app = session_dep_app(tmp_path, monkeypatch)
+    resp = client_of(app).post("/dbt/sd-add")
+    assert resp.status_code == 200
+    assert projects_in_db(app) == 1
+
+
+def test_session_dep_commit_failure_gives_500_not_200(tmp_path, monkeypatch):
+    app = session_dep_app(tmp_path, monkeypatch)
+    real_factory = app.state.session_factory
+
+    def failing_factory():
+        session = real_factory()
+
+        def boom():
+            raise RuntimeError("commit failed")
+
+        session.commit = boom
+        return session
+
+    app.state.session_factory = failing_factory
+    resp = client_of(app).post("/dbt/sd-add", headers={"X-Request-ID": "cf-1"})
+    assert resp.status_code == 500, "commit упал уже после отправки 200: SessionDep обязан завершаться до ответа"
+    body = resp.json()
+    assert body["error"]["code"] == "internal" and body["error"]["request_id"] == "cf-1"
+    assert "commit failed" not in resp.text
+    app.state.session_factory = real_factory
+    assert projects_in_db(app) == 0
+
+
+def test_session_dep_http_exception_rolls_back(tmp_path, monkeypatch):
+    app = session_dep_app(tmp_path, monkeypatch)
+    assert client_of(app).post("/dbt/sd-400").status_code == 400
+    assert projects_in_db(app) == 0
+
+
+def test_get_session_dependency_is_kept_for_compatibility():
+    from app.db import get_session
+    assert callable(get_session)
