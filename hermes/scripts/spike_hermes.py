@@ -42,7 +42,7 @@ def run_single_simulation(
 ) -> dict[str, Any]:
     """Выполняет один запуск роли 'code' (через реальный API или симуляцию)."""
     start_time = time.perf_counter()
-    session_id = f"role:code:spike_sub_{index}"
+    session_id = f"spike_run:code:spike_sub_{index}"
 
     if not simulate and gateway_url:
         # Реальный запрос к Hermes /v1/runs
@@ -120,7 +120,7 @@ def test_guard_blocking() -> dict[str, Any]:
     if guard is None:
         return {"passed": False, "reason": "guard module not found"}
 
-    session_id = "role:code:test_run_1"
+    session_id = "spike_run:code:test_sub_1"
     # 1. Попытка вызвать команду шелла
     blocked_commands = ["terminal", "bash", "execute_command", "sh"]
     blocked_results = {}

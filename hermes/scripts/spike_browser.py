@@ -52,7 +52,7 @@ def check_headless_environment() -> dict[str, Any]:
 def simulate_single_browser_session(session_index: int, target_url: str) -> dict[str, Any]:
     """Выполняет одну браузерную сессию: десктоп 1440x900 + мобильный 390x844 + логи консоли."""
     start_time = time.perf_counter()
-    session_id = f"role:design:spike_run_{session_index}"
+    session_id = f"spike_run_{session_index}:design:project"
     ctx = browser.BrowserSessionContext(session_id=session_id) if browser else None
 
     # Имитация навигации и рендеринга страницы
