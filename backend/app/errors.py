@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .logging import request_id_var
+from .repositories.base import VersionConflict
 
 HTTP_CODES = {
     400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 405: "method_not_allowed",
@@ -39,6 +40,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     # поле input из ошибок pydantic не возвращаем: в нём могут быть данные клиента целиком
     errors = [{"loc": [str(part) for part in e["loc"]], "msg": e["msg"], "type": e["type"]} for e in exc.errors()]
     return error_response(422, "invalid", "Неверные данные запроса", {"errors": errors})
+
+
+async def version_conflict_handler(request: Request, exc: VersionConflict) -> JSONResponse:
+    return error_response(409, "version_conflict", "Данные изменились, обновите страницу и повторите")
 
 
 def internal_error_response() -> JSONResponse:

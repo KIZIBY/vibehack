@@ -28,6 +28,7 @@ class Settings:
     session_secret: Optional[str] = None
     version: str = "dev"
     log_level: str = "INFO"
+    cookie_secure: bool = False
 
     def __repr__(self) -> str:
         parts = []
@@ -60,6 +61,11 @@ def _integer(env: Mapping[str, str], name: str, default: int) -> int:
         raise ValueError(f"{name}: ожидается целое число, получено {value!r}") from None
 
 
+def _boolean(env: Mapping[str, str], name: str, default: bool) -> bool:
+    value = _text(env, name, None)
+    return default if value is None else value.strip().lower() in ("true", "1", "yes")
+
+
 def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
     """Пустая строка в переменной = не задана. Нецелое значение числовой переменной — ValueError с её именем."""
     env = os.environ if env is None else env
@@ -75,4 +81,5 @@ def load_settings(env: Optional[Mapping[str, str]] = None) -> Settings:
         session_secret=_text(env, "JUDGE_SESSION_SECRET", None),
         version=_text(env, "JUDGE_VERSION", Settings.version),
         log_level=_text(env, "JUDGE_LOG_LEVEL", Settings.log_level),
+        cookie_secure=_boolean(env, "JUDGE_COOKIE_SECURE", Settings.cookie_secure),
     )
