@@ -20,6 +20,11 @@ zone_hermes() {
 
 zone_frontend() {
   if [ ! -f frontend/package.json ]; then echo "SKIP frontend: тестов нет"; return 0; fi
+  local has_test
+  # perl с JSON::PP из ядра: не зависит от интерпретатора Python проекта; нечитаемый JSON — fail-closed
+  has_test="$(perl -MJSON::PP -0777 -e 'my $d = decode_json(<>); print exists $d->{scripts}{test} ? "yes" : "no"' frontend/package.json 2>/dev/null)" || {
+    echo "test-unit: frontend/package.json не читается (невалидный JSON)" >&2; return 2; }
+  if [ "$has_test" != "yes" ]; then echo "SKIP frontend: тестов нет (в package.json нет скрипта test)"; return 0; fi
   (cd frontend && npm test) || { echo "FAIL frontend: npm test красный" >&2; return 1; }
 }
 
