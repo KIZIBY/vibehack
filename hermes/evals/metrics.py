@@ -61,7 +61,7 @@ def stability_counts(runs: Sequence[Mapping[str, float]], tol: float = 1.0) -> t
         if len(vals) < 2:
             continue
         total += 1
-        if max(vals) - min(vals) <= tol:
+        if max(vals) - min(vals) <= tol + 1e-9:
             ok += 1
     return ok, total
 

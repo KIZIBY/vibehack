@@ -80,80 +80,126 @@ def write_atomic(target_path: Path, data: dict[str, Any]) -> None:
                 pass
 
 
+def _is_num(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and v not in (float("inf"), float("-inf"))
+
+
+def _only(obj: dict, allowed: set[str], ctx: str) -> None:
+    extra = set(obj) - allowed
+    if extra:
+        raise ValueError(f"{ctx}: unknown fields {sorted(extra)}")
+
+
+def _text(obj: dict, key: str, ctx: str, max_len: int, required: bool = True) -> None:
+    v = obj.get(key)
+    if v is None and not required:
+        return
+    if not isinstance(v, str) or not v.strip():
+        raise ValueError(f"{ctx}: '{key}' is required and must be a non-empty string")
+    if len(v) > max_len:
+        raise ValueError(f"{ctx}: '{key}' is longer than {max_len} characters")
+
+
 def validate_evidence(ev: Any, context: str = "") -> None:
-    """Валидирует объект evidence по схеме."""
+    """Валидирует объект evidence по схеме (kind, ref, quote <= 500, без лишних полей)."""
     if not isinstance(ev, dict):
         raise ValueError(f"{context}: evidence item must be an object")
+    _only(ev, {"kind", "ref", "quote"}, context)
     kind = ev.get("kind")
     if kind not in VALID_EVIDENCE_KINDS:
         raise ValueError(f"{context}: invalid evidence kind '{kind}', allowed: {sorted(VALID_EVIDENCE_KINDS)}")
-    ref = ev.get("ref")
-    if not ref or not isinstance(ref, str) or not ref.strip():
-        raise ValueError(f"{context}: evidence ref is required and must be non-empty string")
+    _text(ev, "ref", context, 10_000)
+    if "quote" in ev and (not isinstance(ev["quote"], str) or len(ev["quote"]) > 500):
+        raise ValueError(f"{context}: quote must be a string up to 500 characters")
 
 
 def validate_score_item(item: Any, index: int) -> None:
-    """Валидирует один критерий оценки."""
+    """Валидирует один критерий оценки по agent-report.schema.json (score)."""
+    ctx = f"scores[{index}]"
     if not isinstance(item, dict):
-        raise ValueError(f"scores[{index}]: must be an object")
+        raise ValueError(f"{ctx}: must be an object")
+    _only(item, {"criterion_id", "status", "score", "max_score", "justification", "evidence", "confidence",
+                 "no_data_reason"}, ctx)
 
     cid = item.get("criterion_id")
     if not cid or not isinstance(cid, str) or not cid.strip():
-        raise ValueError(f"scores[{index}]: criterion_id is required")
+        raise ValueError(f"{ctx}: criterion_id is required")
 
     status = item.get("status")
     if status not in ("scored", "no_data"):
-        raise ValueError(f"scores[{index}]: status must be 'scored' or 'no_data', got '{status}'")
+        raise ValueError(f"{ctx}: status must be 'scored' or 'no_data', got '{status}'")
 
-    justification = item.get("justification")
-    if not justification or not isinstance(justification, str):
-        raise ValueError(f"scores[{index}]: justification is required")
+    _text(item, "justification", ctx, 3000)
 
     conf = item.get("confidence")
-    if conf is None or not isinstance(conf, (int, float)) or not (0.0 <= float(conf) <= 1.0):
-        raise ValueError(f"scores[{index}]: confidence must be a number between 0 and 1")
+    if not _is_num(conf) or not (0.0 <= float(conf) <= 1.0):
+        raise ValueError(f"{ctx}: confidence must be a number between 0 and 1")
+
+    if "max_score" in item and (not _is_num(item["max_score"]) or item["max_score"] <= 0):
+        raise ValueError(f"{ctx}: max_score must be a number > 0")
+    if "evidence" in item:
+        if not isinstance(item["evidence"], list):
+            raise ValueError(f"{ctx}: evidence must be a list")
+        for ev_idx, ev in enumerate(item["evidence"]):
+            validate_evidence(ev, context=f"{ctx}.evidence[{ev_idx}]")
 
     if status == "scored":
         score = item.get("score")
-        if score is None or not isinstance(score, (int, float)) or score < 0:
-            raise ValueError(f"scores[{index}]: score is required and must be >= 0 for status='scored'")
-        max_score = item.get("max_score", 10.0)
-        if not isinstance(max_score, (int, float)) or max_score <= 0:
-            raise ValueError(f"scores[{index}]: max_score must be > 0")
-
-        evidence = item.get("evidence")
-        if not evidence or not isinstance(evidence, list) or len(evidence) == 0:
-            raise ValueError(f"scores[{index}] ('{cid}'): status='scored' requires at least one evidence item")
-        for ev_idx, ev in enumerate(evidence):
-            validate_evidence(ev, context=f"scores[{index}].evidence[{ev_idx}]")
-
-    elif status == "no_data":
+        if not _is_num(score) or score < 0:
+            raise ValueError(f"{ctx}: score is required and must be a number >= 0 for status='scored'")
+        if not item.get("evidence"):
+            raise ValueError(f"{ctx} ('{cid}'): status='scored' requires at least one evidence item")
+    else:
+        if "score" in item and not _is_num(item["score"]):
+            raise ValueError(f"{ctx}: score must be a number")
         reason = item.get("no_data_reason")
         if not reason or not isinstance(reason, str) or not reason.strip():
-            raise ValueError(f"scores[{index}] ('{cid}'): status='no_data' requires a non-empty no_data_reason")
+            raise ValueError(f"{ctx} ('{cid}'): status='no_data' requires a non-empty no_data_reason")
 
 
 def validate_flag_item(flag: Any) -> None:
-    """Валидирует флаг нечестности или сбоя."""
+    """Валидирует флаг нечестности или сбоя (flag в agent-report.schema.json)."""
     if not isinstance(flag, dict):
         raise ValueError("flag must be an object")
+    _only(flag, {"type", "criterion_id", "confidence", "note", "evidence", "related_submission_id", "related_url"}, "flag")
     ftype = flag.get("type")
     if ftype not in VALID_FLAG_TYPES:
         raise ValueError(f"flag type '{ftype}' is invalid, allowed: {sorted(VALID_FLAG_TYPES)}")
 
     conf = flag.get("confidence")
-    if conf is None or not isinstance(conf, (int, float)) or not (0.0 <= float(conf) <= 1.0):
+    if not _is_num(conf) or not (0.0 <= float(conf) <= 1.0):
         raise ValueError("flag confidence must be a number between 0 and 1")
 
-    note = flag.get("note")
-    if not note or not isinstance(note, str) or not note.strip():
-        raise ValueError("flag note is required")
+    _text(flag, "note", "flag", 1500)
+    for key in ("criterion_id", "related_submission_id", "related_url"):
+        if key in flag and not isinstance(flag[key], str):
+            raise ValueError(f"flag: '{key}' must be a string")
 
     evidence = flag.get("evidence")
-    if not evidence or not isinstance(evidence, list) or len(evidence) == 0:
+    if not evidence or not isinstance(evidence, list):
         raise ValueError(f"flag '{ftype}' requires at least one evidence item")
     for ev_idx, ev in enumerate(evidence):
         validate_evidence(ev, context=f"flag.evidence[{ev_idx}]")
+
+
+def validate_claim_item(c: Any, idx: int) -> None:
+    """Валидирует утверждение (claim в agent-report.schema.json)."""
+    ctx = f"claims[{idx}]"
+    if not isinstance(c, dict):
+        raise ValueError(f"{ctx}: must be an object")
+    _only(c, {"claim_id", "text", "source_ref", "verdict", "evidence"}, ctx)
+    _text(c, "claim_id", ctx, 10_000)
+    _text(c, "text", ctx, 500)
+    if "source_ref" not in c:
+        raise ValueError(f"{ctx}: source_ref is required")
+    validate_evidence(c["source_ref"], context=f"{ctx}.source_ref")
+    if c.get("verdict") not in VALID_CLAIM_VERDICTS:
+        raise ValueError(f"{ctx}: verdict must be one of {sorted(VALID_CLAIM_VERDICTS)}")
+    evidence = c.get("evidence")
+    if not isinstance(evidence, list):
+        raise ValueError(f"{ctx}: evidence must be a list")
+    for ev_idx, ev in enumerate(evidence):
+        validate_evidence(ev, context=f"{ctx}.evidence[{ev_idx}]")
 
 
 def validate_experts(experts: Any, role: str) -> None:
@@ -168,9 +214,7 @@ def validate_experts(experts: Any, role: str) -> None:
         for req in ("name", "domain"):
             if not isinstance(ex.get(req), str) or not ex[req].strip():
                 raise ValueError(f"experts[{i}]: '{req}' is required")
-        extra = set(ex) - {"name", "domain", "scores"}
-        if extra:
-            raise ValueError(f"experts[{i}]: unknown fields {sorted(extra)}")
+        _only(ex, {"name", "domain", "scores"}, f"experts[{i}]")
         sc = ex.get("scores", [])
         if not isinstance(sc, list):
             raise ValueError(f"experts[{i}]: scores must be a list")
@@ -268,7 +312,9 @@ def save_scores(params: dict[str, Any], session_id: str | None = None) -> dict[s
     if experts is not None:
         doc["experts"] = experts
 
-    if "summary" in params and isinstance(params["summary"], str):
+    if "summary" in params:
+        if not isinstance(params["summary"], str) or len(params["summary"]) > 3000:
+            raise ValueError("summary must be a string up to 3000 characters")
         doc["summary"] = params["summary"]
 
     report_path = get_role_report_path(run_id, role, scope)
@@ -306,17 +352,7 @@ def save_claims(params: dict[str, Any], session_id: str | None = None) -> dict[s
         raise ValueError("claims must be a list")
 
     for idx, c in enumerate(claims):
-        if not isinstance(c, dict):
-            raise ValueError(f"claims[{idx}]: must be an object")
-        if not c.get("claim_id") or not c.get("text"):
-            raise ValueError(f"claims[{idx}]: claim_id and text are required")
-        if c.get("verdict") not in VALID_CLAIM_VERDICTS:
-            raise ValueError(f"claims[{idx}]: verdict must be one of {sorted(VALID_CLAIM_VERDICTS)}")
-        evidence = c.get("evidence", [])
-        if not isinstance(evidence, list):
-            raise ValueError(f"claims[{idx}]: evidence must be a list")
-        for ev in evidence:
-            validate_evidence(ev, context=f"claims[{idx}]")
+        validate_claim_item(c, idx)
 
     doc = load_or_init_scores_doc(run_id, role, submission_id=scope, scope=scope)
     doc["claims"] = claims
@@ -358,8 +394,10 @@ def save_rubric(params: dict[str, Any], session_id: str | None = None) -> dict[s
 
 
 def save_ux_metrics(params: dict[str, Any], session_id: str | None = None) -> dict[str, Any]:
-    """Обрабатывает report_ux_metrics (роль design)."""
-    del session_id
+    """report_ux_metrics (роль design): один набор на проект, только из сессии scope=project; без перезаписи (FR-017)."""
+    ctx = guard.parse_session_id(session_id)
+    if not ctx or ctx["role"] != "design" or ctx["scope"] != guard.PROJECT_SCOPE:
+        raise ValueError("report_ux_metrics is allowed only for role 'design' with session scope 'project'")
     project_id = _check_project_id(params.get("project_id"))
 
     metrics = params.get("metrics")
@@ -369,19 +407,27 @@ def save_ux_metrics(params: dict[str, Any], session_id: str | None = None) -> di
     for idx, m in enumerate(metrics):
         if not isinstance(m, dict):
             raise ValueError(f"metrics[{idx}]: must be an object")
+        _only(m, {"name", "how_to_measure", "good_looks_like"}, f"metrics[{idx}]")
         for req in ("name", "how_to_measure", "good_looks_like"):
-            if req not in m:
+            if not isinstance(m.get(req), str):
                 raise ValueError(f"metrics[{idx}]: '{req}' is required")
 
     doc = {
         "schema_version": "1",
         "kind": "ux_metrics",
-        "project_id": str(project_id),
+        "project_id": project_id,
         "metrics": metrics,
     }
 
-    out_path = DATA_DIR / "projects" / str(project_id) / "ux-metrics.json"
-    write_atomic(out_path, doc)
+    out_path = DATA_DIR / "projects" / project_id / "ux-metrics.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        raise ValueError("ux metrics for this project already exist: read projects/<project_id>/ux-metrics.json "
+                         "and apply the same set; it is fixed once per project") from None
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2)
 
     return {"success": True, "metrics_count": len(metrics), "out_path": str(out_path)}
 

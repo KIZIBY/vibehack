@@ -366,7 +366,8 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 Желаемое поведение (чек-лист приёмки):
 - [ ] `agent-run.md` §1 (путь отчёта), §2 (session_id), §3 п.2 — новый формат (правку ведёт ветка ship/contract-fix);
 - [ ] `gateway.py`: `session_id = f"{run_id}:{role}:{submission_id}"`; `reports.py`: читать `{role}__{submission_id}.json`;
-- [ ] кросс-тест «плагин пишет — backend читает» на одно имя файла.
+- [ ] кросс-тест «плагин пишет — backend читает» на одно имя файла;
+- [ ] design: метрики UX сдаются отдельным запуском `<run_id>:design:project` один раз на проект (`report_ux_metrics` откажет при повторе и вне scope `project`), оценки работ — `<run_id>:design:<submission_id>`.
 
 **Журнал:**
 - 2026-10-25 · [agents] заведено; плагин и тесты в PR зоны hermes.
@@ -384,6 +385,7 @@ Severity: P1 — контракт заморожен, backend/hermes читаю�
 - [ ] `guard.check_file_access`: проверка префикса `runs/<run_id>` подстрокой; сделать сравнение по сегментам пути;
 - [ ] `run_role.py`: имя каталога работы с пробелами/кириллицей/`.` даёт невалидный scope, скрипт рапортует успех; валидировать и падать; Idempotency-Key без scope (контракт — `<run_id>:<role>:<attempt>`);
 - [ ] `reports.write_atomic`: tmp-имя только по pid, read-modify-write отчёта без блокировки (параллельные report_* одной сессии); журнал: `seq` по числу строк без межпроцессной блокировки;
+- [ ] ревью P2: `evilcheck.check_report` требует полный путь файла в evidence флага (а навыки допускают sha/URL/слайд); порог NFR-010 для сдвига на злых работах не задан; `rubric_version` берётся из аргументов модели (должен приходить из входа запуска); сигнатуры хуков журнала (`tool`) и guard (`tool_name`) сверить на живом Hermes; `delegate_task` в business: toolsets экспертов (только чтение) и запрет `report_*`; `test_report_experts` задаёт `source_ref` рубрики объектом (по схеме строка), `save_rubric` не валидирует по схеме;
 - [ ] `docker-compose.yml` монтирует только `skills/ai-judge`; новые навыки `ai-judge-*` не смонтированы (сейчас инструкции передаёт run_role/backend из репозитория, монтирование нужно для самостоятельного вызова навыков в Hermes).
 
 ### B-018 · [developer] agents: T001 и T003 отмечены выполненными по симуляции
