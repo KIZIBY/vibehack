@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibehack.local/contracts/inventory.schema.json",
+  "title": "Inventory",
+  "description": "Опись материалов одной работы. Пишет intake (зона B) в submissions/<submission_id>/inventory.json. Все пути — относительно корня данных платформы (DATA_DIR).",
+  "type": "object",
+  "required": ["schema_version", "submission_id", "project_id", "team_name", "created_at", "materials", "completeness"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1" },
+    "submission_id": { "type": "string", "minLength": 1 },
+    "project_id": { "type": "string", "minLength": 1 },
+    "team_name": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "materials": { "type": "array", "items": { "$ref": "#/$defs/material" } },
+    "completeness": { "$ref": "#/$defs/completeness" },
+    "limits_applied": {
+      "type": "array",
+      "description": "Какие лимиты сработали (например, репозиторий обрезан до исходного кода, видео — первые 10 минут).",
+      "items": { "type": "string" }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "git": {
+      "type": "object",
+      "description": "Сводка по истории репозитория; полная история — в git_log.json рядом.",
+      "required": ["available"],
+      "additionalProperties": false,
+      "properties": {
+        "available": { "type": "boolean" },
+        "first_commit_at": { "type": ["string", "null"], "format": "date-time" },
+        "last_commit_at": { "type": ["string", "null"], "format": "date-time" },
+        "commit_count": { "type": "integer", "minimum": 0 },
+        "commits_before_start": { "type": "integer", "minimum": 0 },
+        "history_rewritten": { "type": "boolean" },
+        "log_path": { "type": "string" }
+      }
+    },
+    "masked_secrets": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Сколько секретов найдено и замаскировано в извлечённом тексте (NFR-012)."
+    }
+  },
+  "$defs": {
+    "material": {
+      "type": "object",
+      "required": ["material_id", "type", "source", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "material_id": { "type": "string", "minLength": 1 },
+        "type": {
+          "enum": ["repository", "host", "presentation", "screencast", "archive", "code_file", "document", "image", "metrics_row", "other"]
+        },
+        "source": {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["upload", "url"] },
+            "path": { "type": "string", "description": "Для upload: путь загруженного файла." },
+            "url": { "type": "string", "description": "Для url: исходная ссылка." }
+          }
+        },
+        "status": { "enum": ["available", "partial", "unavailable", "deleted"] },
+        "reason": { "type": "string", "description": "Причина для partial, unavailable и deleted (например, retention)." },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "extracted": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "text_path": { "type": "string" },
+            "slides_dir": { "type": "string", "description": "PNG слайдов: 001.png, 002.png, …" },
+            "slide_count": { "type": "integer", "minimum": 0 },
+            "frames_dir": { "type": "string" },
+            "transcript_path": { "type": "string" },
+            "duration_seconds": { "type": "number", "minimum": 0 },
+            "repo_dir": { "type": "string" },
+            "file_count": { "type": "integer", "minimum": 0 },
+            "languages": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "meta": {
+          "type": "object",
+          "description": "Свободные сведения intake: заголовок страницы хоста, статус HTTP, число проверок доступности и т.п.",
+          "additionalProperties": true
+        }
+      }
+    },
+    "completeness": {
+      "type": "object",
+      "required": ["status", "required", "missing"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["complete", "incomplete"] },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "missing": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

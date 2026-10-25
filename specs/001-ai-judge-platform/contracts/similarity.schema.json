@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vibehack.local/contracts/similarity.schema.json",
+  "title": "Similarity",
+  "description": "Межкомандное сравнение кода внутри проекта. Пишет intake (зона B) в projects/<project_id>/similarity.json после того, как описи всех работ готовы (FR-018).",
+  "type": "object",
+  "required": ["schema_version", "project_id", "generated_at", "pairs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "1" },
+    "project_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "method": { "type": "string", "description": "Например: token-shingles-5 + winnowing." },
+    "pairs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["submission_a", "submission_b", "similarity", "fragments"],
+        "additionalProperties": false,
+        "properties": {
+          "submission_a": { "type": "string" },
+          "submission_b": { "type": "string" },
+          "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+          "fragments": {
+            "type": "array",
+            "description": "Совпавшие участки, не больше 20 на пару.",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": ["a", "b", "lines"],
+              "additionalProperties": false,
+              "properties": {
+                "a": { "type": "string", "description": "путь:строки в работе A" },
+                "b": { "type": "string", "description": "путь:строки в работе B" },
+                "lines": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
