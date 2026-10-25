@@ -38,3 +38,4 @@ DORA-события: `deploy:start|done|failed` · `publish:done|failed` · `inc
 | 2026-10-25T10:33:34Z | publish:pr | branch=foundation sha=ef5d118 |
 | 2026-10-25T11:46:26Z | publish:pr | branch=fix/frontend-no-test-script sha=bda90cf |
 | 2026-10-25T11:50:07Z | publish:pr | branch=backend-projects sha=bf39c6c |
+| 2026-10-25T11:55:59Z | publish:pr | branch=backend-projects sha=0c06851 |
