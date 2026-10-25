@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .logging import request_id_var
 from .repositories.base import VersionConflict
 from .services.netguard import UnsafeUrl
+from .services.rubric import RubricNotConfirmed
 from .services.storage import PayloadTooLarge, UnsafePath
 
 HTTP_CODES = {
@@ -58,6 +59,10 @@ async def unsafe_path_handler(request: Request, exc: UnsafePath) -> JSONResponse
 
 async def file_exists_handler(request: Request, exc: FileExistsError) -> JSONResponse:
     return error_response(409, "conflict", "Материал с таким идентификатором уже сохранён")
+
+
+async def rubric_not_confirmed_handler(request: Request, exc: RubricNotConfirmed) -> JSONResponse:
+    return error_response(409, "rubric_not_confirmed", "Сначала подтвердите рубрику")
 
 
 async def unsafe_url_handler(request: Request, exc: UnsafeUrl) -> JSONResponse:

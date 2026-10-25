@@ -14,13 +14,14 @@ from .config import Settings, load_settings
 from .db import make_engine, make_session_factory
 from .errors import (
     file_exists_handler, http_exception_handler, payload_too_large_handler, unsafe_path_handler,
-    unsafe_url_handler, validation_exception_handler, version_conflict_handler,
+    rubric_not_confirmed_handler, unsafe_url_handler, validation_exception_handler, version_conflict_handler,
 )
 from .health import router as health_router
 from .logging import configure_logging
 from .middleware import RequestContextMiddleware
 from .repositories.base import VersionConflict
 from .services.netguard import UnsafeUrl
+from .services.rubric import RubricNotConfirmed
 from .services.storage import PayloadTooLarge, UnsafePath
 
 
@@ -65,6 +66,7 @@ def create_app(
     app.add_exception_handler(UnsafePath, unsafe_path_handler)
     app.add_exception_handler(FileExistsError, file_exists_handler)
     app.add_exception_handler(UnsafeUrl, unsafe_url_handler)
+    app.add_exception_handler(RubricNotConfirmed, rubric_not_confirmed_handler)
     app.add_middleware(AuthMiddleware, sessions_of=lambda: app.state.sessions, secure_of=lambda: settings.cookie_secure)
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health_router)
