@@ -20,9 +20,18 @@ import threading
 
 import pytest
 from test_results import (  # noqa: F401  (хелперы и данные T034)
-    BASE, C_BIZ, C_CODE, C_HUMAN, PID, RUN1, S1, S2, T1, T2, TS, Env, assert_valid, board, env, explain, row_of,
-    seed_basic,
+    BASE, C_BIZ, C_CODE, C_HUMAN, CRITERIA_V1, PID, RUN1, S1, S2, T1, T2, TS, Env, assert_valid, board, explain,
+    row_of, seed_basic,
 )
+
+
+@pytest.fixture
+def env(tmp_path):
+    e = Env(tmp_path)
+    e.add_project()
+    e.add_rubric(1, CRITERIA_V1)
+    e.add_run(RUN1)
+    return e
 
 
 def url(sid=S1, cid=C_CODE) -> str:
