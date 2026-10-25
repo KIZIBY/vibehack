@@ -50,6 +50,35 @@ On-call = владелец; агенты диагностируют, чинят 
 - После любого отката — verify как после деплоя (health + smoke) + задача на первопричину: откат —
   это mitigation, а не решение.
 
+### 3.1 Single-VM deploy (T095)
+
+Production для SQLite использует `/opt/ai-judge` для релизов и `/var/lib/ai-judge` для данных.
+Перед первым запуском на VPS создать только на сервере `/etc/ai-judge/ai-judge.env` с переменными
+`JUDGE_DEMO_USER`, `JUDGE_DEMO_PASSWORD`, `JUDGE_SESSION_SECRET` и, если нужен Hermes,
+`HERMES_API_URL`, `API_SERVER_KEY`. Значения не добавлять в git и не передавать аргументами командной
+строки. `JUDGE_DATABASE_URL` и `JUDGE_DATA_DIR` задаёт сам deploy-скрипт.
+
+Первый deploy (root на VPS):
+
+```bash
+DEPLOY_HOST=203.0.113.10 TLS_EMAIL=owner@example.com bash scripts/deploy.sh
+```
+
+`DEPLOY_HOST` — публичный IPv4 сервера. Скрипт устанавливает nginx/certbot, получает короткоживущий
+IP-сертификат Let's Encrypt через профиль `shortlived`, делает backup SQLite перед миграцией, собирает frontend, запускает backend
+как systemd-сервис и выполняет `GET /health` плюс smoke-запрос главной страницы. Сертификат продлевается
+стандартным certbot timer.
+
+Откат к предыдущему релизу:
+
+```bash
+DEPLOY_HOST=203.0.113.10 bash scripts/rollback.sh
+```
+
+Откат кода не откатывает SQLite-схему: миграции должны быть backward-compatible, а backup до миграции
+остаётся в `/var/lib/ai-judge/backups`. Для диагностики: `systemctl status ai-judge`,
+`journalctl -u ai-judge -n 100 --no-pager`, `nginx -t`.
+
 ## 4. Роли
 
 | Кто | В инциденте |

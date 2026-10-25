@@ -205,7 +205,9 @@ main_phys="$(cd "$main_wt" && pwd -P)" || exit 2
 # path/branch pairs; Bash variables cannot contain NUL, but can safely contain every path byte Git
 # permits except NUL itself. A detached worktree gets an empty branch field.
 worktree_pairs_nul() {
-  root_git worktree list --porcelain -z | perl -0777 -e '
+  local raw
+  if raw="$(root_git worktree list --porcelain -z 2>/dev/null)"; then
+    printf '%s' "$raw" | perl -0777 -e '
     use strict; use warnings;
     my $raw = do { local $/; <STDIN> } // "";
     for my $rec (split /\0\0/, $raw) {
@@ -217,6 +219,21 @@ worktree_pairs_nul() {
       print $w, "\0", $b, "\0";
     }
   '
+  else
+    # Git versions before porcelain -z (for example Debian/Ubuntu images with Git 2.34)
+    # still provide a record-oriented porcelain format. Convert it to the same NUL protocol.
+    root_git worktree list --porcelain 2>/dev/null | perl -0777 -e '
+      use strict; use warnings;
+      my $raw = do { local $/; <STDIN> } // "";
+      for my $rec (split /(?:\r?\n){2,}/, $raw) {
+        my ($w) = $rec =~ /(?:^|\n)worktree (.*)/;
+        next unless defined $w;
+        my ($b) = $rec =~ /(?:^|\n)branch refs\/heads\/(.*)/;
+        $b = "" unless defined $b;
+        print $w, "\0", $b, "\0";
+      }
+    '
+  fi
 }
 
 # Process substitution keeps the while-loop in this shell (so `found`/`matched` need no predictable
