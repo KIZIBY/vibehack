@@ -132,7 +132,13 @@ systemctl reload nginx
 systemctl daemon-reload
 systemctl enable --now "$APP"
 systemctl restart "$APP"
-curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/health" >/dev/null
+for attempt in $(seq 1 30); do
+  if curl --fail --silent --show-error --max-time 2 --resolve "$HOST:443:127.0.0.1" "https://$HOST/health" >/dev/null; then
+    break
+  fi
+  [[ "$attempt" -eq 30 ]] && die "backend health не стал готов за 30 секунд"
+  sleep 1
+done
 curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/" >/dev/null
 
 if [[ -x "$ROOT/scripts/ops-log.sh" ]]; then
