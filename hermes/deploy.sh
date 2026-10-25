@@ -5,11 +5,22 @@
 # Usage: bash hermes/deploy.sh
 # Env:   HERMES_DATA_DIR — данные Hermes на хосте (по умолчанию ~/.hermes)
 #        HERMES_VERSION  — тег образа (по умолчанию — из docker-compose.yml)
+#        JUDGE_DATA_DIR  — общий каталог материалов (окружение, иначе корневой .env, иначе <корень>/data);
+#                          относительный путь считается от корня репозитория — как у scripts/dev.sh
 # Exit:  0 = контейнер поднят · 1 = нет ~/.hermes/.env (сначала мастер setup) · иное — ошибка docker
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export HERMES_DATA_DIR="${HERMES_DATA_DIR:-$HOME/.hermes}"
+ROOT="$(cd "$HERE/.." && pwd)"
+# Общий том материалов должен быть тем же каталогом, что у backend (compose читает ./data от hermes/, а не от корня).
+if [ -z "${JUDGE_DATA_DIR:-}" ] && [ -f "$ROOT/.env" ]; then
+  JUDGE_DATA_DIR="$( set -a; . "$ROOT/.env" >/dev/null 2>&1; printf '%s' "${JUDGE_DATA_DIR:-}" )"
+fi
+JUDGE_DATA_DIR="${JUDGE_DATA_DIR:-$ROOT/data}"
+case "$JUDGE_DATA_DIR" in /*) ;; *) JUDGE_DATA_DIR="$ROOT/${JUDGE_DATA_DIR#./}" ;; esac
+mkdir -p "$JUDGE_DATA_DIR"
+export JUDGE_DATA_DIR
 cd "$HERE"
 
 docker compose pull
