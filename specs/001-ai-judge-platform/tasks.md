@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Tasks: AI-судья
 
 Спека: `spec.md` · план: `plan.md` · контракты: `contracts/`. Формат строки:
@@ -163,7 +164,7 @@ lease разные (`backend-core`, `backend-eval`), а пути берутся 
 - [x] T062 [P] [C] [S0] Защита ролей: хук `pre_tool_call` с белым списком инструментов по роли (из `session_id`) и запретом записи вне `runs/<run_id>/`; если T001 выбрал профили — конфиг профилей вместо хука. RED: роль `code` не может вызвать терминал. (`hermes/plugins/ai-judge/guard.py`, `hermes/config/`) — FR-022, NFR-010
 - [x] T063 [P] [C] [S0] [US2] Навыки `rubric` и `sorter`: извлечение критериев, весов, шкал и якорей из вводных; разметка неопознанных материалов. (`hermes/skills/ai-judge-rubric/`, `ai-judge-sorter/`) — FR-004, FR-005, FR-006, FR-012
 - [x] T064 [P] [C] [S0] [US6] Навык `code`: процедура код-ревью (архитектура, качество, тесты, безопасность, соответствие ТЗ), ссылка на файл и строки обязательна, пометка «нет данных» вместо догадок. (`hermes/skills/ai-judge-code/`) — FR-015
-- [ ] T065 [P] [C] [S1] [US6] Навык `business`: определение предметной области, подъём 1–3 профильных экспертов через `delegate_task`, медиана оценок, разброс > 3 пунктов — в отчёт. (`hermes/skills/ai-judge-business/`) — FR-016
+- [x] T065 [P] [C] [S1] [US6] Навык `business`: определение предметной области, подъём 1–3 профильных экспертов через `delegate_task`, медиана оценок, разброс > 3 пунктов — в отчёт. (`hermes/skills/ai-judge-business/`) — FR-016
 - [ ] T066 [P] [C] [S1] [US6] Навык `design`: метрики UX один раз на проект, прохождение хоста браузером, скриншоты 1440×900 и 390×844, ошибки консоли, откат на скринкаст, если хост не отвечает. (`hermes/skills/ai-judge-design/`) — FR-017
 - [ ] T067 [P] [C] [S1] [US6] Навык `critic-uniqueness`: поисковые запросы по сути решения, проверка даты старта по `git_log.json`, чтение `similarity.json`, флаги `plagiarism` и `pre_start_project` с уверенностью и ссылками. (`hermes/skills/ai-judge-critic-uniqueness/`) — FR-018
 - [ ] T068 [P] [C] [S1] [US6] Навык `critic-honesty`: выписать утверждения из презентации и расшифровки, сверить с кодом, хостом и отчётами `code` и `design`, вердикт `confirmed|not_found|contradicted`, флаг `claim_mismatch`. (`hermes/skills/ai-judge-critic-honesty/`) — FR-019
