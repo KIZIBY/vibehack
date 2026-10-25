@@ -230,6 +230,19 @@ t "setup.sh dry-run с package.json: npm не запускался" 0 lognot '^n
 t "setup.sh dry-run: node_modules не создан" 0 test ! -e "$S/frontend/node_modules"
 t "setup.sh в настоящем режиме падает при ошибке установки" 0 real_nonzero ut STUB_RC=1 STUB_NPM_RC=1 bash "$S/scripts/setup.sh"
 
+# ── 5c. backend/requirements.txt (T012): setup.sh ставит его, если файл есть ──
+S2="$TMP/setup2"; mkproj "$S2" novenv
+printf 'pytest\n' > "$S2/requirements-dev.txt"
+t "setup.sh dry-run без backend/requirements.txt → exit 0" 0 ut SETUP_DRY_RUN=1 bash "$S2/scripts/setup.sh"
+t_out_absent "setup.sh dry-run без backend/requirements.txt: про него ничего не печатается" 'backend/requirements\.txt'
+mkdir -p "$S2/backend"; printf 'alembic\nsqlalchemy\n' > "$S2/backend/requirements.txt"
+t "setup.sh dry-run с backend/requirements.txt → exit 0" 0 ut SETUP_DRY_RUN=1 bash "$S2/scripts/setup.sh"
+t_out "setup.sh dry-run с backend/requirements.txt: печатает его установку" 'backend/requirements\.txt'
+t "setup.sh dry-run с backend/requirements.txt: pip не запускался" 0 lognot 'pip|-m venv|install'
+BREQ="$ROOT/backend/requirements.txt"
+t "backend/requirements.txt содержит alembic" 0 grep -iqE '^alembic($|[^A-Za-z0-9_-])' "$BREQ"
+t "backend/requirements.txt содержит sqlalchemy" 0 grep -iqE '^sqlalchemy($|[^A-Za-z0-9_-])' "$BREQ"
+
 # ── 6. dev.sh / migrate.sh без компонентов; остальные обёртки — SKIP и 0 ──
 B="$TMP/bare"; mkproj "$B"
 t "dev.sh без backend/app/main.py → exit 1" 1 ut bash "$B/scripts/dev.sh"

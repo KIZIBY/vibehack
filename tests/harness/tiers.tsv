@@ -29,7 +29,7 @@ ci-report.sh               fast   13
 memory-check.sh            fast   17
 state-recover.sh           fast   11
 check-entrypoint.sh        fast   18
-project-scripts.sh         fast   123
+project-scripts.sh         fast   130
 pipeline-state.sh          full   31           600
 intake.sh                  full   44           600
 publish-main.sh            full   25

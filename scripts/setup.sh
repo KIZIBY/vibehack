@@ -12,6 +12,9 @@ run() {
 
 [ -d .venv ] || run python3 -m venv .venv || exit $?
 run .venv/bin/python -m pip install -q -r requirements-dev.txt || exit $?
+if [ -f backend/requirements.txt ]; then
+  run .venv/bin/python -m pip install -q -r backend/requirements.txt || exit $?
+fi
 if [ -f frontend/package.json ]; then
   if [ "$DRY" = 1 ]; then echo "setup[dry-run]: (cd frontend && npm install)"
   else echo "setup: (cd frontend && npm install)"; (cd frontend && npm install) || exit $?; fi
