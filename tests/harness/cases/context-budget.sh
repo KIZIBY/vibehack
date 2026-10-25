@@ -73,7 +73,13 @@ resolve_ticket github:acme/repo#3 r3 h2 2026-08-02T11:00:00Z
 record_usage github:acme/repo#4 a4 bug claude sonnet h2 1100 400 900 2026-08-02T12:00:00Z
 resolve_ticket github:acme/repo#4 r4 h2 2026-08-02T13:00:00Z
 
-t "record: ledger is created private" 0 test "$(stat -f '%Lp' "$LEDGER" 2>/dev/null || stat -c '%a' "$LEDGER")" = 600
+ledger_mode() {
+  case "$(uname -s)" in
+    Darwin) stat -f '%Lp' "$LEDGER" ;;
+    *) stat -c '%a' "$LEDGER" ;;
+  esac
+}
+t "record: ledger is created private" 0 test "$(ledger_mode)" = 600
 t "record: raw ticket IDs never persist" 1 grep -q 'github:acme/repo' "$LEDGER"
 before="$(wc -l < "$LEDGER" | tr -d ' ')"
 t "record: identical attempt is idempotent" 0 record_usage github:acme/repo#1 a1 bug claude sonnet h1 700 300 400 2026-08-01T10:00:00Z
