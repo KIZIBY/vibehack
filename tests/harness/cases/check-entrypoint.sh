@@ -14,8 +14,18 @@ t "check.sh исполняемый (mode 100755)" 0 test -x "$CHECK"
 t "check.sh — bash-wrapper (shebang /bin/bash)" 0 sh -c 'head -1 "$1" | grep -qx "#!/bin/bash"' _ "$CHECK"
 
 # ── проект без tests/harness/: SKIP + NOTE, exit 0 ──
+# После T010 реальный check.sh вызывает lint.sh/test-unit.sh из блока проекта; здесь проверяется
+# именно контракт обёртки, поэтому берём шаблон «пустого блока»: реальный check.sh, из которого
+# вырезано всё между маркерами блока проекта, и PROJECT_CHECKS=0.
 P="$TMP/proj"; mkdir -p "$P/scripts"
-cp "$CHECK" "$P/scripts/check.sh"
+empty_block_template() {
+  awk '/# --- начало блока проекта ---/ { print; skip = 1; next }
+       /# --- конец блока проекта ---/ { skip = 0 }
+       !skip { print }' "$CHECK" | sed 's/^PROJECT_CHECKS=.*/PROJECT_CHECKS=0/' > "$P/scripts/check.sh"
+}
+t "шаблон пустого блока собран из реального check.sh" 0 empty_block_template
+t "шаблон: PROJECT_CHECKS=0 и маркеры блока на месте" 0 sh -c \
+  'grep -qx "PROJECT_CHECKS=0" "$1" && grep -q "начало блока проекта" "$1" && grep -q "конец блока проекта" "$1"' _ "$P/scripts/check.sh"
 t "без tests/harness/ → exit 0" 0 bash "$P/scripts/check.sh"
 t_out "без tests/harness/ → одна строка SKIP" '^check: SKIP self-test'
 t_out "пустой блок проекта честно помечен NOTE" '^check: NOTE проверки проекта не настроены'
