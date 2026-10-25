@@ -1,0 +1,35 @@
+{
+  "schema_version": "1",
+  "kind": "scores",
+  "run_id": "run-20261024-001",
+  "submission_id": "sub-team-alpha",
+  "role": "design",
+  "rubric_version": 1,
+  "scores": [
+    {
+      "criterion_id": "crit-3",
+      "status": "scored",
+      "score": 7,
+      "max_score": 10,
+      "justification": "Основной сценарий (взять талон) проходится за три шага, состояния загрузки и ошибок показаны, типографика и палитра единые; на мобильной ширине таблица очереди не помещается.",
+      "evidence": [
+        {
+          "kind": "screenshot",
+          "ref": "home-mobile.png"
+        },
+        {
+          "kind": "screenshot",
+          "ref": "home-desktop.png"
+        },
+        {
+          "kind": "video",
+          "ref": "demo.mp4@00:01:12",
+          "quote": "Выбор услуги и получение талона"
+        }
+      ],
+      "confidence": 0.75
+    }
+  ],
+  "flags": [],
+  "summary": "Интерфейс последовательный и понятный; адаптивность требует доработки."
+}

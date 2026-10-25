@@ -1,0 +1,69 @@
+{
+  "schema_version": "1",
+  "submission_id": "sub-team-beta",
+  "project_id": "proj-hack-2026",
+  "team_name": "Бета",
+  "created_at": "2026-10-24T09:20:00Z",
+  "materials": [
+    {
+      "material_id": "m-repo",
+      "type": "repository",
+      "source": {
+        "kind": "url",
+        "url": "https://github.com/team-beta/city-helper"
+      },
+      "status": "partial",
+      "reason": "Репозиторий обрезан до исходного кода: бинарные файлы и каталог node_modules пропущены",
+      "size_bytes": 96468992,
+      "extracted": {
+        "repo_dir": "projects/proj-hack-2026/submissions/sub-team-beta/repo",
+        "file_count": 1380,
+        "languages": [
+          "JavaScript"
+        ]
+      }
+    },
+    {
+      "material_id": "m-deck",
+      "type": "presentation",
+      "source": {
+        "kind": "upload",
+        "path": "projects/proj-hack-2026/submissions/sub-team-beta/raw/pitch.pptx"
+      },
+      "status": "available",
+      "size_bytes": 5242880,
+      "extracted": {
+        "text_path": "projects/proj-hack-2026/submissions/sub-team-beta/extracted/pitch.txt",
+        "slides_dir": "projects/proj-hack-2026/submissions/sub-team-beta/extracted/slides",
+        "slide_count": 9
+      }
+    }
+  ],
+  "completeness": {
+    "status": "incomplete",
+    "required": [
+      "repository",
+      "presentation",
+      "host"
+    ],
+    "missing": [
+      "host"
+    ]
+  },
+  "limits_applied": [
+    "репозиторий обрезан до исходного кода"
+  ],
+  "warnings": [
+    "Ссылка на работающий хост не приложена"
+  ],
+  "git": {
+    "available": true,
+    "first_commit_at": "2026-10-24T01:10:00Z",
+    "last_commit_at": "2026-10-24T07:55:30Z",
+    "commit_count": 12,
+    "commits_before_start": 0,
+    "history_rewritten": false,
+    "log_path": "projects/proj-hack-2026/submissions/sub-team-beta/git_log.json"
+  },
+  "masked_secrets": 2
+}

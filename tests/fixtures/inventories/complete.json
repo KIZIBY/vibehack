@@ -1,0 +1,92 @@
+{
+  "schema_version": "1",
+  "submission_id": "sub-team-alpha",
+  "project_id": "proj-hack-2026",
+  "team_name": "Альфа",
+  "created_at": "2026-10-24T09:15:00Z",
+  "materials": [
+    {
+      "material_id": "m-repo",
+      "type": "repository",
+      "source": {
+        "kind": "url",
+        "url": "https://github.com/team-alpha/smart-queue"
+      },
+      "status": "available",
+      "size_bytes": 18432000,
+      "extracted": {
+        "repo_dir": "projects/proj-hack-2026/submissions/sub-team-alpha/repo",
+        "file_count": 214,
+        "languages": [
+          "Python",
+          "TypeScript"
+        ]
+      }
+    },
+    {
+      "material_id": "m-deck",
+      "type": "presentation",
+      "source": {
+        "kind": "upload",
+        "path": "projects/proj-hack-2026/submissions/sub-team-alpha/raw/deck.pdf"
+      },
+      "status": "available",
+      "size_bytes": 2457600,
+      "extracted": {
+        "text_path": "projects/proj-hack-2026/submissions/sub-team-alpha/extracted/deck.txt",
+        "slides_dir": "projects/proj-hack-2026/submissions/sub-team-alpha/extracted/slides",
+        "slide_count": 12
+      }
+    },
+    {
+      "material_id": "m-demo",
+      "type": "screencast",
+      "source": {
+        "kind": "upload",
+        "path": "projects/proj-hack-2026/submissions/sub-team-alpha/raw/demo.mp4"
+      },
+      "status": "available",
+      "size_bytes": 48234496,
+      "extracted": {
+        "frames_dir": "projects/proj-hack-2026/submissions/sub-team-alpha/extracted/frames",
+        "transcript_path": "projects/proj-hack-2026/submissions/sub-team-alpha/extracted/demo.txt",
+        "duration_seconds": 184.5
+      }
+    },
+    {
+      "material_id": "m-host",
+      "type": "host",
+      "source": {
+        "kind": "url",
+        "url": "https://smart-queue.team-alpha.example/"
+      },
+      "status": "available",
+      "meta": {
+        "http_status": 200,
+        "page_title": "Умная очередь",
+        "availability_checks": 3
+      }
+    }
+  ],
+  "completeness": {
+    "status": "complete",
+    "required": [
+      "repository",
+      "presentation",
+      "host"
+    ],
+    "missing": []
+  },
+  "limits_applied": [],
+  "warnings": [],
+  "git": {
+    "available": true,
+    "first_commit_at": "2026-10-23T18:02:11Z",
+    "last_commit_at": "2026-10-24T08:41:57Z",
+    "commit_count": 57,
+    "commits_before_start": 0,
+    "history_rewritten": false,
+    "log_path": "projects/proj-hack-2026/submissions/sub-team-alpha/git_log.json"
+  },
+  "masked_secrets": 0
+}

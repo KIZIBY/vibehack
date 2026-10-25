@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "project_id": "proj-hack-2026",
+  "generated_at": "2026-10-24T09:40:00Z",
+  "method": "token-shingles-5 + winnowing",
+  "pairs": [
+    {
+      "submission_a": "sub-team-alpha",
+      "submission_b": "sub-team-gamma",
+      "similarity": 0.42,
+      "fragments": [
+        {
+          "a": "backend/app/services/queue.py:12-58",
+          "b": "server/queue_service.py:5-51",
+          "lines": 47
+        },
+        {
+          "a": "backend/app/utils/time.py:1-22",
+          "b": "server/helpers/time_utils.py:3-24",
+          "lines": 22
+        }
+      ]
+    },
+    {
+      "submission_a": "sub-team-alpha",
+      "submission_b": "sub-team-beta",
+      "similarity": 0.03,
+      "fragments": []
+    }
+  ]
+}
