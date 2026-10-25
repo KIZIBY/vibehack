@@ -172,8 +172,8 @@ def table_names(engine: sa.Engine) -> set[str]:
 _ULID_SEQ = iter(range(1, 10**9))
 
 
-def insert(conn: sa.Connection, table: str, **over) -> None:
-    """INSERT полной строки из ROWS[table] с переопределениями; недостающие NOT NULL-колонки — см. docstring модуля."""
+def insert(conn: sa.Connection, table: str, *, verb: str = "INSERT", **over) -> None:
+    """``verb`` INSERT полной строки из ROWS[table] с переопределениями; недостающие NOT NULL-колонки — см. docstring модуля."""
     values = {**ROWS.get(table, {}), **over}
     cols = {c["name"]: c for c in sa.inspect(conn).get_columns(table)}
     unknown = sorted(set(values) - set(cols))
@@ -191,7 +191,7 @@ def insert(conn: sa.Connection, table: str, **over) -> None:
             values[name] = "1"
     names = ", ".join(f'"{n}"' for n in values)
     params = ", ".join(f":{n}" for n in values)
-    conn.execute(sa.text(f'INSERT INTO "{table}" ({names}) VALUES ({params})'), values)
+    conn.execute(sa.text(f'{verb} INTO "{table}" ({names}) VALUES ({params})'), values)
 
 
 def seed_chain(conn: sa.Connection) -> None:
@@ -445,6 +445,29 @@ def test_append_only_rejects_update_and_delete(tmp_path, table, op):
     assert "append-only" in str(err.value)
     with engine.connect() as conn:
         assert snapshot(conn, table) == before, "строка изменилась после отклонённой попытки"
+
+
+# Строка с тем же ключом, но другим значением: INSERT OR REPLACE в SQLite удаляет старую строку, не вызывая
+# DELETE-триггер (recursive_triggers=OFF), т.е. журнал или правку можно подменить в обход I-3.
+REPLACE_OVERRIDES = {
+    "journal_event": dict(result_summary="tampered"),   # тот же (run_id, seq)
+    "score_override": dict(score=1),                    # тот же id
+}
+
+
+@pytest.mark.parametrize("table", sorted(APPEND_ONLY))
+def test_append_only_rejects_insert_or_replace(tmp_path, table):
+    engine = upgraded(tmp_path)
+    _seed_append_only(engine)
+    with engine.connect() as conn:
+        before = snapshot(conn, table)
+    assert len(before) == 1
+    with pytest.raises(sa_exc.DBAPIError) as err:
+        with engine.begin() as conn:
+            insert(conn, table, verb="INSERT OR REPLACE", **REPLACE_OVERRIDES[table])
+    assert "append-only" in str(err.value)
+    with engine.connect() as conn:
+        assert snapshot(conn, table) == before, "строка подменена через INSERT OR REPLACE"
 
 
 @pytest.mark.parametrize("table", sorted(APPEND_ONLY))
