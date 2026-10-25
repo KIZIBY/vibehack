@@ -128,11 +128,12 @@ server {
 EOF
 
 nginx -t
+systemctl reload nginx
 systemctl daemon-reload
 systemctl enable --now "$APP"
 systemctl restart "$APP"
-curl --fail --silent --show-error --max-time 10 https://$HOST/health >/dev/null
-curl --fail --silent --show-error --max-time 10 https://$HOST/ >/dev/null
+curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/health" >/dev/null
+curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/" >/dev/null
 
 if [[ -x "$ROOT/scripts/ops-log.sh" ]]; then
   "$ROOT/scripts/ops-log.sh" deploy:done "sha=$RELEASE scope=$APP host=$HOST"

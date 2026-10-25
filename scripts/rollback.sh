@@ -17,8 +17,8 @@ done
 [[ -n "$previous" ]] || die "предыдущий release не найден"
 ln -sfn "$previous" "$BASE/current"
 systemctl restart "$APP"
-curl --fail --silent --show-error --max-time 10 "https://$HOST/health" >/dev/null
-curl --fail --silent --show-error --max-time 10 "https://$HOST/" >/dev/null
+curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/health" >/dev/null
+curl --fail --silent --show-error --max-time 10 --resolve "$HOST:443:127.0.0.1" "https://$HOST/" >/dev/null
 if [[ -x "$(dirname "$0")/ops-log.sh" ]]; then
   "$(dirname "$0")/ops-log.sh" deploy:done "rollback=$previous scope=$APP host=$HOST"
 fi
